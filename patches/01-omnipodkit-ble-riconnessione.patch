@@ -1,8 +1,66 @@
 diff --git a/OmnipodKit/OmnipodKit/Bluetooth/BlePodComms.swift b/OmnipodKit/OmnipodKit/Bluetooth/BlePodComms.swift
-index 2df476e..198bca5 100644
+index 2df476e..408c360 100644
 --- a/OmnipodKit/OmnipodKit/Bluetooth/BlePodComms.swift
 +++ b/OmnipodKit/OmnipodKit/Bluetooth/BlePodComms.swift
-@@ -690,6 +690,13 @@ extension BlePodComms: OmniConnectionDelegate {
+@@ -629,9 +629,56 @@ class BlePodComms: PodComms {
+         }
+     }
+ 
++    /// Quanto si aspetta che il collegamento torni su, prima di rinunciare.
++    private static let onDemandReconnectTimeout: TimeInterval = 12
++
++    /// Restituisce il PeripheralManager solo se il collegamento e' vivo. Se e' caduto prova a
++    /// riagganciare e aspetta, invece di rinunciare all'istante.
++    ///
++    /// Il pod chiude il collegamento dopo tre minuti di silenzio: e' il suo comportamento
++    /// normale, non un guasto. Quindi arrivare qui scollegati e' la regola, non l'eccezione.
++    /// Prima si falliva subito, e chi stava programmando un bolo si vedeva rifiutare il
++    /// comando con un errore di comunicazione mentre il pod era li', a venti centimetri.
++    private func connectedManagerWaitingIfNeeded() -> PeripheralManager? {
++        if let manager = manager, manager.peripheral.state == .connected {
++            return manager
++        }
++
++        // Mai bloccare il thread principale: se qualcuno ci arriva da li', si avvia la
++        // riconnessione e si rinuncia per questa volta.
++        let canWait = !Thread.isMainThread
++
++        guard let bleIdentifier = podState?.bleIdentifier else {
++            return nil
++        }
++
++        log.default("Pod non connesso: tento la riconnessione invece di rinunciare")
++        _ = bluetoothManager.retrieveAndConnectKnownPod(uuidString: bleIdentifier)
++
++        guard canWait else {
++            return nil
++        }
++
++        let start = Date()
++        let deadline = start.addingTimeInterval(BlePodComms.onDemandReconnectTimeout)
++
++        while Date() < deadline {
++            if let manager = manager, manager.peripheral.state == .connected {
++                log.default("Riconnessione su richiesta riuscita in %{public}.1f s",
++                            Date().timeIntervalSince(start))
++                return manager
++            }
++            Thread.sleep(forTimeInterval: 0.25)
++        }
++
++        log.error("Riconnessione su richiesta non riuscita entro %{public}.0f s",
++                  BlePodComms.onDemandReconnectTimeout)
++        return nil
++    }
++
+     func bleRunSession(withName name: String, _ block: @escaping (_ result: SessionRunResult) -> Void) {
+ 
+-        guard let manager = manager, manager.peripheral.state == .connected else {
++        guard let manager = connectedManagerWaitingIfNeeded() else {
+             block(.failure(PodCommsError.podNotConnected))
+             return
+         }
+@@ -690,6 +737,13 @@ extension BlePodComms: OmniConnectionDelegate {
      func omnipodPeripheralDidDisconnect(peripheral: CBPeripheral, error: Error?) {
          if let podState = podState, peripheral.identifier.uuidString == podState.bleIdentifier {
              log.bleDebug("omnipodPeripheralDidDisconnect for %@", peripheral.identifier.uuidString)
@@ -136,7 +194,7 @@ index 60211fa..c104e58 100644
          defer {
              commandLock.unlock()
 diff --git a/OmnipodKit/OmnipodKit/Bluetooth/PeripheralManager.swift b/OmnipodKit/OmnipodKit/Bluetooth/PeripheralManager.swift
-index d253af4..e485944 100644
+index d253af4..b10af7d 100644
 --- a/OmnipodKit/OmnipodKit/Bluetooth/PeripheralManager.swift
 +++ b/OmnipodKit/OmnipodKit/Bluetooth/PeripheralManager.swift
 @@ -9,6 +9,7 @@
@@ -147,10 +205,27 @@ index d253af4..e485944 100644
  import os.log
  
  class PeripheralManager: NSObject {
-@@ -38,6 +39,12 @@ class PeripheralManager: NSObject {
+@@ -38,6 +39,29 @@ class PeripheralManager: NSObject {
      var cmdQueue: [Data] = []
      let queueLock = NSCondition()
  
++    /// Durate degli ultimi scambi riusciti, in secondi. Protetto da `commandLock`.
++    ///
++    /// I timeout di questo modulo sono valori fissi scritti quando gli iPhone erano altri.
++    /// Ma quanto ci mette davvero uno scambio non dipende dal pod: dipende dall'intervallo
++    /// di connessione che iOS concede, che cambia da telefono a telefono e a seconda di
++    /// quante altre periferiche Bluetooth sono collegate. Un messaggio DASH e' spezzato in
++    /// frammenti da 20 byte, fino a 15, e ogni frammento e' una scrittura con conferma che
++    /// costa almeno un intervallo di connessione: con un intervallo lento la stessa
++    /// operazione puo' durare il triplo. Invece di allargare i numeri a occhio, si misura.
++    private var recentLatencies: [TimeInterval] = []
++
++    private static let latencySampleLimit = 40
++    private static let latencyMinimumSamples = 8
++    /// Non si supera mai questo multiplo del valore di partenza: un guasto vero deve
++    /// restare un guasto, non diventare un'attesa infinita.
++    private static let latencyMaximumStretch: Double = 4
++
 +    /// Vero fra la disconnessione e la riconnessione. Protetto da `queueLock`.
 +    /// Serve perche' un broadcast e' un segnale istantaneo: chi si risveglia deve poter
 +    /// capire *perche'* si e' svegliato, altrimenti ricontrolla la coda vuota e torna
@@ -160,7 +235,7 @@ index d253af4..e485944 100644
      var idleStart: Date? = nil
  
      var needsReconnection: Bool {
-@@ -46,6 +53,33 @@ class PeripheralManager: NSObject {
+@@ -46,6 +70,33 @@ class PeripheralManager: NSObject {
          return Date().timeIntervalSince(start) > .minutes(2.9)
      }
  
@@ -194,7 +269,7 @@ index d253af4..e485944 100644
  
      /// The dispatch queue used to serialize operations on the peripheral
      let queue = DispatchQueue(label: "com.loopkit.PeripheralManager.queue", qos: .unspecified)
-@@ -129,7 +163,7 @@ extension PeripheralManager {
+@@ -129,7 +180,7 @@ extension PeripheralManager {
              if self.needsReconnection {
                  self.log.default("Triggering forceful reconnect")
                  do {
@@ -203,7 +278,7 @@ index d253af4..e485944 100644
                  } catch let error {
                      self.log.error("Error while forcing reconnection: %{public}@", String(describing: error))
                  }
-@@ -142,7 +176,7 @@ extension PeripheralManager {
+@@ -142,7 +193,7 @@ extension PeripheralManager {
              if self.needsConfiguration || self.peripheral.services == nil {
                  do {
                      self.log.bleDebug("Applying configuration")
@@ -212,7 +287,108 @@ index d253af4..e485944 100644
                      self.needsConfiguration = false
  
                      if let delegate = self.delegate {
-@@ -518,8 +552,38 @@ extension PeripheralManager {
+@@ -238,6 +289,7 @@ extension PeripheralManager {
+         }
+ 
+         // Run
++        let startedAt = Date()
+         command()
+ 
+         guard !commandConditions.isEmpty else {
+@@ -246,13 +298,22 @@ extension PeripheralManager {
+         }
+ 
+         // Postlude
+-        let signaled = commandLock.wait(until: Date(timeIntervalSinceNow: timeout))
++        let effectiveTimeout = adaptiveTimeout(base: timeout)
++        if effectiveTimeout > timeout {
++            log.bleDebug("runCommand: attesa allungata da %{public}.1fs a %{public}.1fs sulla base delle misure (%{public}@)",
++                         timeout, effectiveTimeout, measuredLatencyDescriptionUnlocked)
++        }
++        let signaled = commandLock.wait(until: Date(timeIntervalSinceNow: effectiveTimeout))
+ 
+         defer {
+             commandError = nil
+             commandConditions = []
+         }
+ 
++        if signaled, commandError == nil {
++            recordLatency(Date().timeIntervalSince(startedAt))
++        }
++
+         guard signaled else {
+             self.log.info("runCommand lock timeout reached - not signalled")
+             let characteristicsReady = peripheral.getCommandCharacteristic(profile: profile) != nil && peripheral.getDataCharacteristic(profile: profile) != nil
+@@ -271,6 +332,57 @@ extension PeripheralManager {
+         }
+     }
+ 
++    /// Registra la durata di uno scambio riuscito. Va chiamata tenendo `commandLock`.
++    private func recordLatency(_ duration: TimeInterval) {
++        guard duration > 0, duration.isFinite else { return }
++
++        recentLatencies.append(duration)
++        if recentLatencies.count > PeripheralManager.latencySampleLimit {
++            recentLatencies.removeFirst(recentLatencies.count - PeripheralManager.latencySampleLimit)
++        }
++    }
++
++    /// Attesa effettiva per un'operazione, a partire dal valore nominale.
++    ///
++    /// Finche' non ci sono abbastanza misure si usa il valore di partenza tale e quale.
++    /// Poi si prende il quasi-massimo osservato - non la media, che una coda lunga la
++    /// nasconde - moltiplicato per un margine, e non si scende mai sotto il nominale.
++    /// Va chiamata tenendo `commandLock`.
++    private func adaptiveTimeout(base: TimeInterval) -> TimeInterval {
++        guard recentLatencies.count >= PeripheralManager.latencyMinimumSamples else {
++            return base
++        }
++
++        let sorted = recentLatencies.sorted()
++        let index = min(sorted.count - 1, Int(Double(sorted.count) * 0.95))
++        let nearMaximum = sorted[index]
++
++        let suggested = nearMaximum * 3
++        let ceiling = base * PeripheralManager.latencyMaximumStretch
++
++        return min(max(base, suggested), ceiling)
++    }
++
++    /// Quanto ci mette uno scambio con questo pod su questo telefono, in millisecondi.
++    /// Finisce nel Loop Report: e' il dato che dice se i timeout fissi erano il problema.
++    var measuredLatencyDescription: String {
++        commandLock.lock()
++        defer { commandLock.unlock() }
++        return measuredLatencyDescriptionUnlocked
++    }
++
++    /// Da usare quando `commandLock` e' gia' in mano al chiamante.
++    private var measuredLatencyDescriptionUnlocked: String {
++        guard !recentLatencies.isEmpty else { return "nessuna misura" }
++
++        let sorted = recentLatencies.sorted()
++        let median = sorted[sorted.count / 2]
++        let worst = sorted[sorted.count - 1]
++
++        return String(format: "n=%d mediana=%.0fms peggiore=%.0fms",
++                      sorted.count, median * 1000, worst * 1000)
++    }
++
+     /// It's illegal to call this without first acquiring the commandLock
+     ///
+     /// - Parameter condition: The condition to add
+@@ -362,6 +474,10 @@ extension PeripheralManager {
+         queue.sync {
+             items.append("needsConfiguration: \(needsConfiguration)")
+         }
++        // Finisce nel Loop Report: dice quanto ci mette davvero uno scambio con questo pod
++        // su questo telefono, che e' l'unico modo per sapere se i timeout erano il problema.
++        items.append("latenza scambi: \(measuredLatencyDescription)")
++        items.append("timing radio lenta: \(usesSlowRadioTiming)")
+         return items.joined(separator: "\n")
+     }
+ }
+@@ -518,8 +634,38 @@ extension PeripheralManager {
      func centralManager(_ central: CBCentralManager, didDisconnect peripheral: CBPeripheral, error: Error?) {
          log.error("[DISCONNECT] PeripheralManager didDisconnect: error=%{public}@ peripheral=%{public}@",
                    String(describing: error), peripheral)
@@ -251,7 +427,7 @@ index d253af4..e485944 100644
          }
      }
  
-@@ -529,6 +593,10 @@ extension PeripheralManager {
+@@ -529,6 +675,10 @@ extension PeripheralManager {
          case .connected:
              clearCommsQueues()
  
@@ -263,10 +439,33 @@ index d253af4..e485944 100644
              /// This may report 20 here (MTU 23) initially because iOS auto-negotiates the MTU asynchronously.
              /// iOS should auto-negotiate a maximumWriteValueLength of 244 for the O5 to match packetLayout.maxPayloadSize.
 diff --git a/OmnipodKit/OmnipodKit/PumpManager/OmniPumpManager.swift b/OmnipodKit/OmnipodKit/PumpManager/OmniPumpManager.swift
-index be782e7..8f1a452 100644
+index be782e7..e9c2e09 100644
 --- a/OmnipodKit/OmnipodKit/PumpManager/OmniPumpManager.swift
 +++ b/OmnipodKit/OmnipodKit/PumpManager/OmniPumpManager.swift
-@@ -380,7 +380,10 @@ public class OmniPumpManager: RileyLinkPumpManager {
+@@ -155,6 +155,22 @@ public class OmniPumpManager: RileyLinkPumpManager {
+         }
+     }
+ 
++    /// Forza il ripristino del collegamento col pod e legge lo stato.
++    ///
++    /// Con la riconnessione su richiesta dentro bleRunSession, avviare una sessione qualsiasi
++    /// e' gia' sufficiente a rifare il collegamento e la sessione cifrata: qui si usa la
++    /// lettura di stato perche' e' il comando piu' leggero che il pod conosca.
++    public func reconnectToPod(completion: @escaping (Error?) -> Void) {
++        getPodStatus(canOptimize: false) { result in
++            switch result {
++            case .success:
++                completion(nil)
++            case .failure(let error):
++                completion(error)
++            }
++        }
++    }
++
+     func refresh() {
+         // run in a separate thread?
+         getPodStatus(canOptimize: true) { _ in }
+@@ -380,7 +396,10 @@ public class OmniPumpManager: RileyLinkPumpManager {
          }
      }
  
@@ -278,14 +477,76 @@ index be782e7..8f1a452 100644
      @objc func appMovedToBackground() {
          backgroundTask.startBackgroundTask(hasPod: state.podState != nil)
      }
+diff --git a/OmnipodKit/OmnipodKit/PumpManagerUI/ViewModels/OmniSettingsViewModel.swift b/OmnipodKit/OmnipodKit/PumpManagerUI/ViewModels/OmniSettingsViewModel.swift
+index ebb35ba..077fe90 100644
+--- a/OmnipodKit/OmnipodKit/PumpManagerUI/ViewModels/OmniSettingsViewModel.swift
++++ b/OmnipodKit/OmnipodKit/PumpManagerUI/ViewModels/OmniSettingsViewModel.swift
+@@ -340,6 +340,15 @@ class OmniSettingsViewModel: ObservableObject {
+         }
+     }
+ 
++    /// Riaggancia il pod su richiesta dell'utente.
++    func reconnectToPod(completion: @escaping (Error?) -> Void) {
++        pumpManager.reconnectToPod { error in
++            DispatchQueue.main.async {
++                completion(error)
++            }
++        }
++    }
++
+     func runTemporaryBasalProgram(unitsPerHour: Double, for duration: TimeInterval, completion: @escaping (PumpManagerError?) -> Void) {
+         pumpManager.enactTempBasal(unitsPerHour: unitsPerHour, for: duration, automatic: false, completion: completion)
+     }
 diff --git a/OmnipodKit/OmnipodKit/PumpManagerUI/Views/OmniSettingsView.swift b/OmnipodKit/OmnipodKit/PumpManagerUI/Views/OmniSettingsView.swift
-index 5a4df98..6b4763e 100644
+index 5a4df98..abcab99 100644
 --- a/OmnipodKit/OmnipodKit/PumpManagerUI/Views/OmniSettingsView.swift
 +++ b/OmnipodKit/OmnipodKit/PumpManagerUI/Views/OmniSettingsView.swift
-@@ -601,6 +601,15 @@ struct OmniSettingsView: View  {
+@@ -22,6 +22,10 @@ struct OmniSettingsView: View  {
+ 
+     var handleRileyLinkSelection: (RileyLinkDevice) -> Void // Eros only
+ 
++    @State private var reconnectingToPod = false
++
++    @State private var reconnectResultMessage: String? = nil
++
+     @State private var showingDeleteConfirmation = false
+ 
+     @State private var showSuspendOptions = false
+@@ -601,6 +605,46 @@ struct OmniSettingsView: View  {
                  }
              }
  
++            Section(footer: FrameworkLocalText("Rebuilds the Bluetooth connection and the encrypted session with the pod. Use it when a bolus or another command is refused because the pod is not connected.", comment: "Footer for the reconnect to pod row")) {
++                Button(action: {
++                    reconnectingToPod = true
++                    reconnectResultMessage = nil
++                    viewModel.reconnectToPod { error in
++                        reconnectingToPod = false
++                        if let error = error {
++                            reconnectResultMessage = String(format: LocalizedString("Not reconnected: %1$@", comment: "Message shown when the manual pod reconnect failed (1: error)"), error.localizedDescription)
++                        } else {
++                            reconnectResultMessage = LocalizedString("Pod connected.", comment: "Message shown when the manual pod reconnect succeeded")
++                        }
++                    }
++                }) {
++                    HStack {
++                        FrameworkLocalText("Reconnect to Pod", comment: "Title of the manual reconnect to pod button")
++                            .foregroundColor(Color.primary)
++                        Spacer()
++                        if reconnectingToPod {
++                            ProgressView()
++                        }
++                    }
++                }
++                .disabled(reconnectingToPod || viewModel.noPod)
++
++                if let reconnectResultMessage = reconnectResultMessage {
++                    Text(reconnectResultMessage)
++                        .font(.footnote)
++                        .foregroundColor(Color.secondary)
++                }
++            }
++
 +            Section(footer: FrameworkLocalText("Adds detailed Bluetooth tracing to the Loop Report. Use it while investigating pod connection drops, then turn it back off.", comment: "Footer for the detailed Bluetooth log row")) {
 +                Toggle(isOn: Binding(
 +                    get: { Storage.shared.bleDebug.value },

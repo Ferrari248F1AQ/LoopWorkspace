@@ -1,3 +1,447 @@
+diff --git a/Loop/Common/Models/StatusExtensionContext.swift b/Loop/Common/Models/StatusExtensionContext.swift
+index bee1f328..aa007b4a 100644
+--- a/Loop/Common/Models/StatusExtensionContext.swift
++++ b/Loop/Common/Models/StatusExtensionContext.swift
+@@ -310,6 +310,7 @@ struct StatusExtensionContext: RawRepresentable {
+     var cgmStatusHighlightContext: DeviceStatusHighlightContext?
+     var cgmLifecycleProgressContext: DeviceLifecycleProgressContext?
+     var carbsOnBoard: Double?
++    var activeInsulin: Double?
+     
+     init() { }
+     
+@@ -335,6 +336,7 @@ struct StatusExtensionContext: RawRepresentable {
+         batteryPercentage = rawValue["batteryPercentage"] as? Double
+         reservoirCapacity = rawValue["reservoirCapacity"] as? Double
+         carbsOnBoard = rawValue["carbsOnBoard"] as? Double
++        activeInsulin = rawValue["activeInsulin"] as? Double
+ 
+         if let rawValue = rawValue["glucoseDisplay"] as? GlucoseDisplayableContext.RawValue {
+             glucoseDisplay = GlucoseDisplayableContext(rawValue: rawValue)
+@@ -383,6 +385,7 @@ struct StatusExtensionContext: RawRepresentable {
+         raw["cgmStatusHighlightContext"] = cgmStatusHighlightContext?.rawValue
+         raw["cgmLifecycleProgressContext"] = cgmLifecycleProgressContext?.rawValue
+         raw["carbsOnBoard"] = carbsOnBoard
++        raw["activeInsulin"] = activeInsulin
+         
+         return raw
+     }
+diff --git a/Loop/Loop Widget Extension/Components/GlucoseView.swift b/Loop/Loop Widget Extension/Components/GlucoseView.swift
+index a0d5c5c2..be74b5f0 100644
+--- a/Loop/Loop Widget Extension/Components/GlucoseView.swift	
++++ b/Loop/Loop Widget Extension/Components/GlucoseView.swift	
+@@ -26,16 +26,16 @@ struct GlucoseView: View {
+                     let glucoseFormatter = NumberFormatter.glucoseFormatter(for: unit)
+                     if let glucoseString = glucoseFormatter.string(from: quantity.doubleValue(for: unit)) {
+                         Text(glucoseString)
+-                            .font(.system(size: 24, weight: .heavy, design: .default))
++                            .font(.system(size: 24, weight: .heavy, design: .rounded))
+                     }
+                     else {
+                         Text("??")
+-                            .font(.system(size: 24, weight: .heavy, design: .default))
++                            .font(.system(size: 24, weight: .heavy, design: .rounded))
+                     }
+                 }
+                 else {
+                     Text("---")
+-                        .font(.system(size: 24, weight: .heavy, design: .default))
++                        .font(.system(size: 24, weight: .heavy, design: .rounded))
+                 }
+                 
+                 if let trendImageName = getArrowImage() {
+diff --git a/Loop/Loop Widget Extension/LoopWidgets.swift b/Loop/Loop Widget Extension/LoopWidgets.swift
+index f87c2b89..50100b4b 100644
+--- a/Loop/Loop Widget Extension/LoopWidgets.swift	
++++ b/Loop/Loop Widget Extension/LoopWidgets.swift	
+@@ -16,6 +16,9 @@ struct LoopWidgets: WidgetBundle {
+         if #available(iOS 16.1, *) {
+             SystemStatusWidget()
+         }
++        if #available(iOS 16.0, *) {
++            LockScreenGlucoseWidget()
++        }
+         if #available(iOS 16.2, *) {
+             GlucoseLiveActivityConfiguration()
+         }
+diff --git a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift
+index 45271bbe..6884f5f8 100644
+--- a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift	
++++ b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift	
+@@ -27,6 +27,17 @@ struct StatusWidgetTimelimeEntry: TimelineEntry {
+ 
+     let pumpHighlight: DeviceStatusHighlightContext?
+     let netBasal: NetBasalContext?
++
++    /// Insulina attiva in unita' e carboidrati attivi in grammi: sono i due numeri che
++    /// stanno nella riga in basso della Live Activity, e senza i quali il widget dice
++    /// meno di quanto potrebbe.
++    let activeInsulin: Double?
++    let carbsOnBoard: Double?
++
++    /// Storico e previsione in mg/dL, per il grafichino del widget rettangolare.
++    /// Solo i valori: assi e etichette in quello spazio non ci starebbero comunque.
++    let glucoseHistory: [Double]
++    let predictedGlucose: [Double]
+     
+     let eventualGlucose: GlucoseContext?
+     
+diff --git a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift
+index beb8bd2f..c14df4ab 100644
+--- a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift	
++++ b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift	
+@@ -37,7 +37,7 @@ class StatusWidgetTimelineProvider: TimelineProvider {
+     func placeholder(in context: Context) -> StatusWidgetTimelimeEntry {
+         log.default("%{public}@: context=%{public}@", #function, String(describing: context))
+ 
+-        return StatusWidgetTimelimeEntry(date: Date(), contextUpdatedAt: Date(), lastLoopCompleted: nil, closeLoop: true, currentGlucose: nil, glucoseFetchedAt: Date(), delta: nil, unit: .milligramsPerDeciliter, sensor: nil, pumpHighlight: nil, netBasal: nil, eventualGlucose: nil, preMealPresetAllowed: true, preMealPresetActive: false, customPresetActive: false)
++        return StatusWidgetTimelimeEntry(date: Date(), contextUpdatedAt: Date(), lastLoopCompleted: nil, closeLoop: true, currentGlucose: nil, glucoseFetchedAt: Date(), delta: nil, unit: .milligramsPerDeciliter, sensor: nil, pumpHighlight: nil, netBasal: nil, activeInsulin: nil, carbsOnBoard: nil, glucoseHistory: [], predictedGlucose: [], eventualGlucose: nil, preMealPresetAllowed: true, preMealPresetActive: false, customPresetActive: false)
+     }
+ 
+     func getSnapshot(in context: Context, completion: @escaping (StatusWidgetTimelimeEntry) -> ()) {
+@@ -166,6 +166,10 @@ class StatusWidgetTimelineProvider: TimelineProvider {
+                 sensor: context.glucoseDisplay,
+                 pumpHighlight: context.pumpStatusHighlightContext,
+                 netBasal: netBasal,
++                activeInsulin: context.activeInsulin,
++                carbsOnBoard: context.carbsOnBoard,
++                glucoseHistory: finalGlucose.suffix(36).map { $0.quantity.doubleValue(for: .milligramsPerDeciliter) },
++                predictedGlucose: (predictedGlucose ?? []).prefix(24).map { $0.quantity.doubleValue(for: .milligramsPerDeciliter) },
+                 eventualGlucose: eventualGlucose,
+                 preMealPresetAllowed: preMealPresetAllowed,
+                 preMealPresetActive: preMealPresetActive,
+diff --git a/Loop/Loop Widget Extension/Widgets/SystemStatusWidget.swift b/Loop/Loop Widget Extension/Widgets/SystemStatusWidget.swift
+index 015f6c5d..1f274990 100644
+--- a/Loop/Loop Widget Extension/Widgets/SystemStatusWidget.swift	
++++ b/Loop/Loop Widget Extension/Widgets/SystemStatusWidget.swift	
+@@ -86,3 +86,327 @@ struct SystemStatusWidget: Widget {
+         .contentMarginsDisabledIfAvailable()
+     }
+ }
++
++
++// MARK: - Schermata di blocco
++
++/// Sfondo per i formati accessori. Da iOS 17 il contenitore va dichiarato, altrimenti il
++/// widget viene disegnato con margini e sfondo di sistema che non c'entrano niente.
++extension View {
++    @ViewBuilder
++    func accessoryWidgetBackgroundIfAvailable() -> some View {
++        if #available(iOSApplicationExtension 17.0, *) {
++            self.containerBackground(for: .widget) {
++                AccessoryWidgetBackground()
++            }
++        } else {
++            self
++        }
++    }
++
++    @ViewBuilder
++    func clearWidgetBackgroundIfAvailable() -> some View {
++        if #available(iOSApplicationExtension 17.0, *) {
++            self.containerBackground(for: .widget) { Color.clear }
++        } else {
++            self
++        }
++    }
++}
++
++@available(iOS 16.0, *)
++enum LockScreenGlucoseFormatting {
++
++    static func glucoseString(_ entry: StatusWidgetTimelimeEntry) -> String {
++        guard let glucose = entry.currentGlucose,
++              !entry.glucoseIsStale,
++              let unit = entry.unit,
++              let string = NumberFormatter.glucoseFormatter(for: unit)
++                .string(from: glucose.quantity.doubleValue(for: unit))
++        else {
++            return "---"
++        }
++        return string
++    }
++
++    /// Freccia di tendenza. Sulla schermata di blocco lo spazio e' pochissimo, quindi si usa
++    /// il glifo semplice e non la versione dentro il cerchio: a quelle dimensioni il cerchio
++    /// diventa una macchia.
++    static func trendSymbol(_ entry: StatusWidgetTimelimeEntry) -> String? {
++        switch entry.sensor?.trendType {
++        case .upUpUp: return "arrow.up"
++        case .upUp: return "arrow.up"
++        case .up: return "arrow.up.right"
++        case .flat: return "arrow.right"
++        case .down: return "arrow.down.right"
++        case .downDown: return "arrow.down"
++        case .downDownDown: return "arrow.down"
++        case .none: return nil
++        }
++    }
++
++    static func deltaString(_ entry: StatusWidgetTimelimeEntry) -> String? {
++        guard let delta = entry.delta, let unit = entry.unit else { return nil }
++        let value = delta.doubleValue(for: unit)
++        guard let formatted = NumberFormatter.glucoseFormatter(for: unit).string(from: abs(value)) else {
++            return nil
++        }
++        return (value < 0 ? "-" : "+") + formatted
++    }
++
++    static func eventualString(_ entry: StatusWidgetTimelimeEntry) -> String? {
++        guard let eventual = entry.eventualGlucose else { return nil }
++        let unit = eventual.unit
++        return NumberFormatter.glucoseFormatter(for: unit).string(from: eventual.quantity.doubleValue(for: unit))
++    }
++
++    static func activeInsulinString(_ entry: StatusWidgetTimelimeEntry) -> String? {
++        guard let iob = entry.activeInsulin else { return nil }
++        return String(format: "%.1fU", iob)
++    }
++
++    static func carbsOnBoardString(_ entry: StatusWidgetTimelimeEntry) -> String? {
++        guard let cob = entry.carbsOnBoard else { return nil }
++        return String(format: "%.0fg", cob)
++    }
++
++    /// Ora dell'ultima lettura. Senza, non si distingue un dato fermo da uno fresco.
++    static func updatedString(_ entry: StatusWidgetTimelimeEntry) -> String? {
++        guard let date = entry.glucoseFetchedAt else { return nil }
++        let formatter = DateFormatter()
++        formatter.dateStyle = .none
++        formatter.timeStyle = .short
++        return formatter.string(from: date)
++    }
++
++    /// Posizione della glicemia dentro un intervallo di lettura, per riempire l'anello.
++    /// Non e' un intervallo terapeutico: serve solo a dare un colpo d'occhio.
++    static func gaugeFraction(_ entry: StatusWidgetTimelimeEntry) -> Double? {
++        guard let glucose = entry.currentGlucose, !entry.glucoseIsStale else { return nil }
++        let mgdl = glucose.quantity.doubleValue(for: .milligramsPerDeciliter)
++        return min(max((mgdl - 40) / (300 - 40), 0), 1)
++    }
++}
++
++@available(iOS 16.0, *)
++struct LockScreenCircularView: View {
++    var entry: StatusWidgetTimelineProvider.Entry
++
++    var body: some View {
++        Group {
++            if let fraction = LockScreenGlucoseFormatting.gaugeFraction(entry) {
++                Gauge(value: fraction) {
++                    EmptyView()
++                } currentValueLabel: {
++                    Text(LockScreenGlucoseFormatting.glucoseString(entry))
++                        .font(.system(.title3, design: .rounded).weight(.semibold))
++                        .minimumScaleFactor(0.6)
++                }
++                .gaugeStyle(.accessoryCircular)
++            } else {
++                ZStack {
++                    AccessoryWidgetBackground()
++                    Text("---")
++                        .font(.system(.title3, design: .rounded).weight(.semibold))
++                }
++            }
++        }
++        .accessoryWidgetBackgroundIfAvailable()
++    }
++}
++
++/// Linea semplice, senza assi ne' etichette: in quello spazio servirebbero a niente.
++///
++/// Prende l'intera serie - storico piu' previsione - ma ne disegna solo un tratto, cosi'
++/// passato e futuro condividono la stessa scala e lo stesso passo orizzontale e si possono
++/// rendere in modo diverso senza che le due linee si scollino.
++@available(iOS 16.0, *)
++struct GlucoseSparkline: Shape {
++    let values: [Double]
++    let range: Range<Int>
++    let minValue: Double
++    let maxValue: Double
++    /// Chiude la forma verso il basso, per poterla riempire.
++    var closed: Bool = false
++
++    func path(in rect: CGRect) -> Path {
++        var path = Path()
++        guard values.count > 1, maxValue > minValue else { return path }
++
++        let lower = max(0, range.lowerBound)
++        let upper = min(values.count, range.upperBound)
++        guard upper - lower > 1 else { return path }
++
++        let stepX = rect.width / CGFloat(values.count - 1)
++
++        func point(at index: Int) -> CGPoint {
++            let clamped = min(max(values[index], minValue), maxValue)
++            let ratio = (clamped - minValue) / (maxValue - minValue)
++            return CGPoint(x: rect.minX + CGFloat(index) * stepX,
++                           y: rect.maxY - CGFloat(ratio) * rect.height)
++        }
++
++        path.move(to: point(at: lower))
++        for index in (lower + 1)..<upper {
++            path.addLine(to: point(at: index))
++        }
++
++        if closed {
++            path.addLine(to: CGPoint(x: point(at: upper - 1).x, y: rect.maxY))
++            path.addLine(to: CGPoint(x: point(at: lower).x, y: rect.maxY))
++            path.closeSubpath()
++        }
++
++        return path
++    }
++}
++
++@available(iOS 16.0, *)
++struct LockScreenRectangularView: View {
++    var entry: StatusWidgetTimelineProvider.Entry
++
++    var body: some View {
++        // Tre fasce a tutta larghezza, non elementi affiancati che si contendono lo spazio.
++        // In 160x72 punti la lettura funziona solo se ogni banda ha un compito solo.
++        VStack(alignment: .leading, spacing: 1) {
++
++            // 1. Quello che leggi in mezzo secondo.
++            HStack(alignment: .firstTextBaseline, spacing: 3) {
++                Text(LockScreenGlucoseFormatting.glucoseString(entry))
++                    .font(.system(size: 22, weight: .bold, design: .rounded))
++
++                if let symbol = LockScreenGlucoseFormatting.trendSymbol(entry) {
++                    Image(systemName: symbol)
++                        .font(.system(size: 11, weight: .bold))
++                }
++
++                if let delta = LockScreenGlucoseFormatting.deltaString(entry) {
++                    Text(delta)
++                        .font(.system(size: 11, weight: .medium))
++                        .foregroundStyle(.secondary)
++                }
++
++                Spacer(minLength: 0)
++            }
++            .lineLimit(1)
++
++            // 2. L'andamento, a tutta larghezza: una striscia vera, non una miniatura
++            //    schiacciata in un angolo.
++            sparkline
++                .frame(maxWidth: .infinity)
++                .frame(height: 18)
++
++            // 3. Il contorno, su una riga sola. Niente icone: a dieci punti diventano
++            //    macchie, e le unita' (U, g) dicono gia' di cosa si tratta.
++            Text(footerLine)
++                .font(.system(size: 10, weight: .medium))
++                .foregroundStyle(.secondary)
++                .lineLimit(1)
++        }
++        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
++        .opacity(entry.contextIsStale ? 0.5 : 1)
++        .clearWidgetBackgroundIfAvailable()
++    }
++
++    private var footerLine: String {
++        [
++            LockScreenGlucoseFormatting.activeInsulinString(entry),
++            LockScreenGlucoseFormatting.carbsOnBoardString(entry),
++            LockScreenGlucoseFormatting.updatedString(entry)
++        ]
++        .compactMap { $0 }
++        .joined(separator: "  \u{00B7}  ")
++    }
++
++    @ViewBuilder
++    private var sparkline: some View {
++        let history = entry.glucoseHistory
++        let values = history + entry.predictedGlucose
++
++        if values.count > 2, let low = values.min(), let high = values.max() {
++            // Un margine attorno ai valori, altrimenti una giornata piatta diventa una
++            // linea che sbatte contro i bordi e sembra drammatica.
++            let span = max(high - low, 40)
++            let mid = (high + low) / 2
++            let minValue = mid - span * 0.6
++            let maxValue = mid + span * 0.6
++            let splitIndex = max(2, history.count)
++
++            ZStack {
++                // Il riempimento da' corpo alla striscia: senza, in monocromia una linea
++                // sottile si perde sullo sfondo dello schermo di blocco.
++                GlucoseSparkline(values: values, range: 0..<splitIndex,
++                                 minValue: minValue, maxValue: maxValue, closed: true)
++                    .fill(.primary.opacity(0.16))
++
++                GlucoseSparkline(values: values, range: 0..<splitIndex,
++                                 minValue: minValue, maxValue: maxValue)
++                    .stroke(style: StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round))
++
++                // La previsione piu' tenue e tratteggiata: si distingue dal passato anche
++                // quando il sistema disegna tutto dello stesso colore.
++                GlucoseSparkline(values: values, range: (splitIndex - 1)..<values.count,
++                                 minValue: minValue, maxValue: maxValue)
++                    .stroke(style: StrokeStyle(lineWidth: 1.4, lineCap: .round, dash: [2.5, 2.5]))
++                    .opacity(0.55)
++            }
++        }
++    }
++}
++
++@available(iOS 16.0, *)
++struct LockScreenInlineView: View {
++    var entry: StatusWidgetTimelineProvider.Entry
++
++    var body: some View {
++        // I widget inline sono una riga sola: niente impaginazione, solo testo.
++        // Ci sta glicemia, delta e insulina attiva, che e' il minimo per decidere qualcosa.
++        let pieces = [
++            LockScreenGlucoseFormatting.glucoseString(entry),
++            LockScreenGlucoseFormatting.deltaString(entry),
++            LockScreenGlucoseFormatting.activeInsulinString(entry)
++        ].compactMap { $0 }
++        let text = pieces.joined(separator: "  ")
++
++        if let symbol = LockScreenGlucoseFormatting.trendSymbol(entry) {
++            Label {
++                Text(text)
++            } icon: {
++                Image(systemName: symbol)
++            }
++        } else {
++            Text(text)
++        }
++    }
++}
++
++@available(iOS 16.0, *)
++struct LockScreenGlucoseWidget: Widget {
++    let kind: String = "LockScreenGlucoseWidget"
++
++    var body: some WidgetConfiguration {
++        StaticConfiguration(kind: kind, provider: StatusWidgetTimelineProvider()) { entry in
++            LockScreenWidgetEntryView(entry: entry)
++        }
++        .configurationDisplayName(LocalizedString("Glucose", comment: "Display name of the lock screen glucose widget"))
++        .description(LocalizedString("Your glucose on the Lock Screen, in StandBy, and on a watch face.", comment: "Description of the lock screen glucose widget"))
++        .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline])
++    }
++}
++
++@available(iOS 16.0, *)
++struct LockScreenWidgetEntryView: View {
++    @Environment(\.widgetFamily) private var family
++    var entry: StatusWidgetTimelineProvider.Entry
++
++    var body: some View {
++        switch family {
++        case .accessoryRectangular:
++            LockScreenRectangularView(entry: entry)
++        case .accessoryInline:
++            LockScreenInlineView(entry: entry)
++        default:
++            LockScreenCircularView(entry: entry)
++        }
++    }
++}
 diff --git a/Loop/Loop.xcodeproj/project.pbxproj b/Loop/Loop.xcodeproj/project.pbxproj
 index 005d0e00..fb7e89b0 100644
 --- a/Loop/Loop.xcodeproj/project.pbxproj
@@ -51,10 +495,10 @@ index 005d0e00..fb7e89b0 100644
  				A9DCF32A25B0FABF00C89088 /* LoopUIColorPalette+Default.swift in Sources */,
 diff --git a/Loop/Loop/Managers/AdaptiveTherapyManager.swift b/Loop/Loop/Managers/AdaptiveTherapyManager.swift
 new file mode 100644
-index 00000000..68c068b2
+index 00000000..9fd964c0
 --- /dev/null
 +++ b/Loop/Loop/Managers/AdaptiveTherapyManager.swift
-@@ -0,0 +1,925 @@
+@@ -0,0 +1,1281 @@
 +//
 +//  AdaptiveTherapyManager.swift
 +//  Loop
@@ -84,9 +528,22 @@ index 00000000..68c068b2
 +struct AdaptiveTherapyInputs {
 +    let basalSchedule: BasalRateSchedule
 +    let insulinSensitivitySchedule: InsulinSensitivitySchedule
++    /// Serve solo al percorso Nightscout, per ricostruire l'assorbimento dei carboidrati
++    /// senza passare dal CarbStore.
++    let carbRatioSchedule: CarbRatioSchedule?
 +    let targetSchedule: GlucoseRangeSchedule
 +    let suspendThreshold: HKQuantity?
 +    let integralRetrospectiveCorrectionEnabled: Bool
++}
++
++/// Le cinque serie temporali su cui lavora il motore, comunque siano state ottenute.
++struct AdaptiveSeries {
++    let glucose: [StoredGlucoseSample]
++    let counteraction: [GlucoseEffectVelocity]
++    let cobValues: [CarbValue]
++    let carbEffects: [GlucoseEffect]
++    let iobValues: [InsulinValue]
++    let source: AdaptiveDataSource
 +}
 +
 +final class AdaptiveTherapyManager {
@@ -100,6 +557,9 @@ index 00000000..68c068b2
 +    /// Fornisce basale, ISF e target correnti. E' una closure per non legare il motore
 +    /// al ciclo di vita di LoopDataManager.
 +    private let inputsProvider: () -> AdaptiveTherapyInputs?
++
++    /// Fonte esterna per lo storico, quando gli archivi locali non bastano.
++    private let historicalServiceProvider: () -> HistoricalTherapyDataService?
 +
 +    private let configuration: AdaptiveTherapyConfiguration
 +
@@ -116,13 +576,15 @@ index 00000000..68c068b2
 +         carbStore: CarbStore,
 +         doseStore: DoseStore,
 +         configuration: AdaptiveTherapyConfiguration = .default,
-+         inputsProvider: @escaping () -> AdaptiveTherapyInputs?)
++         inputsProvider: @escaping () -> AdaptiveTherapyInputs?,
++         historicalServiceProvider: @escaping () -> HistoricalTherapyDataService? = { nil })
 +    {
 +        self.glucoseStore = glucoseStore
 +        self.carbStore = carbStore
 +        self.doseStore = doseStore
 +        self.configuration = configuration
 +        self.inputsProvider = inputsProvider
++        self.historicalServiceProvider = historicalServiceProvider
 +    }
 +
 +    // MARK: - Stato persistito
@@ -238,9 +700,10 @@ index 00000000..68c068b2
 +
 +    func analyze(asOf now: Date = Date()) async throws -> AdaptiveTherapyReport {
 +        guard let inputs = inputsProvider() else {
-+            return AdaptiveTherapyReport(generatedAt: now, windowStart: now, windowEnd: now,
++            return AdaptiveTherapyReport(dataSource: nil, generatedAt: now, windowStart: now, windowEnd: now,
 +                                         slots: [], totalBins: 0, effectiveBins: 0,
 +                                         exclusionCounts: [:], saturatedMeals: [],
++                                         carbRatio: nil, mealAssessments: nil,
 +                                         inconclusiveReason: "Impostazioni terapeutiche non disponibili")
 +        }
 +
@@ -251,26 +714,56 @@ index 00000000..68c068b2
 +        let windowStart = calendar.startOfDay(for: now)
 +            .addingTimeInterval(-.days(Double(configuration.analysisWindowDays)))
 +
-+        // 1. Dati grezzi.
-+        let glucose = try await glucoseStore.getGlucoseSamples(start: windowStart, end: windowEnd)
-+        guard glucose.count > 12 else {
-+            return AdaptiveTherapyReport(generatedAt: now, windowStart: windowStart, windowEnd: windowEnd,
-+                                         slots: [], totalBins: 0, effectiveBins: 0,
-+                                         exclusionCounts: [:], saturatedMeals: [],
-+                                         inconclusiveReason: "Storico glicemico insufficiente")
++        // 1. Dati grezzi. Se in locale non c'e' abbastanza storia si passa alla fonte esterna:
++        // e' il caso subito dopo una reinstallazione, o subito dopo aver allungato la finestra.
++        // Aspettare tre settimane prima che il motore apra bocca non ha senso se sul server
++        // quei dati ci sono gia'.
++        var series: AdaptiveSeries
++        var carbEntries: [StoredCarbEntry]
++
++        let localGlucose = try await glucoseStore.getGlucoseSamples(start: windowStart, end: windowEnd)
++        let expectedSamples = Double(configuration.analysisWindowDays) * 288
++        let localCoverage = expectedSamples > 0 ? Double(localGlucose.count) / expectedSamples : 0
++
++        if localCoverage >= configuration.minimumLocalCoverage {
++            series = try await localSeries(glucose: localGlucose, windowStart: windowStart, windowEnd: windowEnd)
++            carbEntries = try await carbStore.getCarbEntries(start: windowStart.addingTimeInterval(-.hours(12)), end: windowEnd)
++
++        } else if let service = historicalServiceProvider(), service.isHistoricalTherapyDataAvailable {
++            log.default("Copertura locale %{public}.0f%%: rileggo lo storico dalla fonte esterna",
++                        localCoverage * 100)
++
++            let data = try await historicalData(from: service, start: windowStart, end: windowEnd)
++            guard let built = backfilledSeries(from: data, windowStart: windowStart, windowEnd: windowEnd, inputs: inputs) else {
++                return AdaptiveTherapyReport(dataSource: .nightscout, generatedAt: now,
++                                             windowStart: windowStart, windowEnd: windowEnd,
++                                             slots: [], totalBins: 0, effectiveBins: 0,
++                                             exclusionCounts: [:], saturatedMeals: [],
++                                             carbRatio: nil, mealAssessments: nil,
++                                             inconclusiveReason: "Rapporto carboidrati non configurato: impossibile ricostruire lo storico esterno")
++            }
++            series = built
++            carbEntries = data.carbEntries
++
++        } else {
++            series = try await localSeries(glucose: localGlucose, windowStart: windowStart, windowEnd: windowEnd)
++            carbEntries = try await carbStore.getCarbEntries(start: windowStart.addingTimeInterval(-.hours(12)), end: windowEnd)
 +        }
 +
-+        let insulinEffects = try await insulinGlucoseEffects(start: windowStart, end: windowEnd)
++        guard series.glucose.count > 12 else {
++            return AdaptiveTherapyReport(dataSource: series.source, generatedAt: now,
++                                         windowStart: windowStart, windowEnd: windowEnd,
++                                         slots: [], totalBins: 0, effectiveBins: 0,
++                                         exclusionCounts: [:], saturatedMeals: [],
++                                         carbRatio: nil, mealAssessments: nil,
++                                         inconclusiveReason: "Storico glicemico insufficiente, anche dopo aver provato la fonte esterna")
++        }
 +
-+        // Insulin counteraction effect: quanto la glicemia si e' mossa al netto di cio'
-+        // che l'insulina avrebbe dovuto fare. In una finestra senza carboidrati un ICE
-+        // mediamente nullo significa che la basale e' giusta.
-+        let counteraction = glucoseStore.counteractionEffects(for: glucose, to: insulinEffects)
-+
-+        let cobValues = try await carbsOnBoard(start: windowStart, end: windowEnd, velocities: counteraction)
-+        let carbEffects = try await carbGlucoseEffects(start: windowStart, end: windowEnd, velocities: counteraction)
-+        let carbEntries = try await carbStore.getCarbEntries(start: windowStart.addingTimeInterval(-.hours(12)), end: windowEnd)
-+        let iobValues = try await insulinOnBoardValues(start: windowStart, end: windowEnd)
++        let glucose = series.glucose
++        let counteraction = series.counteraction
++        let cobValues = series.cobValues
++        let carbEffects = series.carbEffects
++        let iobValues = series.iobValues
 +
 +        // 2. Pasti che hanno saturato il tetto di assorbimento del modello.
 +        let saturatedMeals = detectSaturatedMeals(entries: carbEntries, carbEffects: carbEffects)
@@ -298,6 +791,20 @@ index 00000000..68c068b2
 +        // 7. Aggiornamento graduale rispetto allo stato precedente.
 +        slots = applyGradualUpdate(slots)
 +
++        // 8. Rapporto insulina/carboidrati. Guarda esattamente le finestre che tutto il
++        // resto del motore butta via: per leggere la basale servono le ore senza pasti, per
++        // leggere il rapporto servono solo quelle con i pasti.
++        let podChanges = (try? await podChangeDates(start: windowStart, end: windowEnd)) ?? []
++        let mealAssessments = assessMeals(carbEntries: carbEntries,
++                                          counteraction: counteraction,
++                                          glucose: glucose,
++                                          saturatedMeals: saturatedMeals,
++                                          podChanges: podChanges,
++                                          windowStart: windowStart,
++                                          windowEnd: windowEnd,
++                                          inputs: inputs)
++        let carbRatioRecommendation = summarizeCarbRatio(from: mealAssessments)
++
 +        var exclusionCounts: [String: Int] = [:]
 +        for bin in bins {
 +            for reason in bin.exclusions {
@@ -306,6 +813,7 @@ index 00000000..68c068b2
 +        }
 +
 +        let report = AdaptiveTherapyReport(
++            dataSource: series.source,
 +            generatedAt: now,
 +            windowStart: windowStart,
 +            windowEnd: windowEnd,
@@ -314,6 +822,8 @@ index 00000000..68c068b2
 +            effectiveBins: bins.reduce(0) { $0 + $1.weight },
 +            exclusionCounts: exclusionCounts,
 +            saturatedMeals: saturatedMeals,
++            carbRatio: carbRatioRecommendation,
++            mealAssessments: mealAssessments,
 +            inconclusiveReason: slots.contains(where: { $0.isActionable }) ? nil : "Nessuna fascia con dati sufficienti"
 +        )
 +
@@ -980,12 +1490,302 @@ index 00000000..68c068b2
 +        return updated
 +    }
 +}
++
++// MARK: - Le due fonti dei dati
++
++private extension AdaptiveTherapyManager {
++
++    /// Serie calcolate dagli archivi locali di Loop. E' il percorso normale.
++    func localSeries(glucose: [StoredGlucoseSample], windowStart: Date, windowEnd: Date) async throws -> AdaptiveSeries {
++        let insulinEffects = try await insulinGlucoseEffects(start: windowStart, end: windowEnd)
++
++        // Insulin counteraction effect: quanto la glicemia si e' mossa al netto di cio' che
++        // l'insulina avrebbe dovuto fare. In una finestra senza carboidrati un ICE mediamente
++        // nullo significa che la basale e' giusta.
++        let counteraction = glucoseStore.counteractionEffects(for: glucose, to: insulinEffects)
++
++        let cobValues = try await carbsOnBoard(start: windowStart, end: windowEnd, velocities: counteraction)
++        let carbEffects = try await carbGlucoseEffects(start: windowStart, end: windowEnd, velocities: counteraction)
++        let iobValues = try await insulinOnBoardValues(start: windowStart, end: windowEnd)
++
++        return AdaptiveSeries(glucose: glucose,
++                              counteraction: counteraction,
++                              cobValues: cobValues,
++                              carbEffects: carbEffects,
++                              iobValues: iobValues,
++                              source: .localStores)
++    }
++
++    func historicalData(from service: HistoricalTherapyDataService,
++                        start: Date,
++                        end: Date) async throws -> HistoricalTherapyData
++    {
++        try await withCheckedThrowingContinuation { continuation in
++            service.fetchHistoricalTherapyData(interval: DateInterval(start: start, end: end)) { result in
++                switch result {
++                case .success(let data): continuation.resume(returning: data)
++                case .failure(let error): continuation.resume(throwing: error)
++                }
++            }
++        }
++    }
++
++    /// Ricostruisce le stesse cinque serie partendo da glicemie, dosi e carboidrati riletti
++    /// dalla fonte esterna, usando la matematica di LoopKit invece degli archivi.
++    ///
++    /// Non tocca nessun archivio locale. Scriverci dentro le dosi storiche sarebbe l'unica
++    /// operazione di tutto questo lavoro capace di influenzare l'insulina per sbaglio.
++    func backfilledSeries(from data: HistoricalTherapyData,
++                          windowStart: Date,
++                          windowEnd: Date,
++                          inputs: AdaptiveTherapyInputs) -> AdaptiveSeries?
++    {
++        guard let carbRatioSchedule = inputs.carbRatioSchedule else {
++            return nil
++        }
++
++        // Le tabelle devono coprire ogni voce, altrimenti dynamicGlucoseEffects fa cadere
++        // l'app con una precondition: si parte da un giorno prima e si arriva a mezza
++        // giornata dopo, e le voci fuori intervallo vengono scartate.
++        let timelineStart = windowStart.addingTimeInterval(-.hours(24))
++        let timelineEnd = windowEnd.addingTimeInterval(.hours(12))
++
++        let sensitivityTimeline = inputs.insulinSensitivitySchedule.quantitiesBetween(start: timelineStart, end: timelineEnd)
++        let carbRatioTimeline = carbRatioSchedule.between(start: timelineStart, end: timelineEnd)
++
++        guard !sensitivityTimeline.isEmpty, !carbRatioTimeline.isEmpty else {
++            return nil
++        }
++
++        let glucose = data.glucose.filter { $0.startDate >= windowStart && $0.startDate <= windowEnd }
++
++        let insulinEffects = data.doses.glucoseEffects(insulinSensitivityTimeline: sensitivityTimeline,
++                                                       from: windowStart,
++                                                       to: windowEnd)
++
++        let counteraction = glucoseStore.counteractionEffects(for: glucose, to: insulinEffects)
++
++        let iobValues = data.doses.insulinOnBoard(from: windowStart, to: windowEnd)
++
++        let carbEntries = data.carbEntries.filter { $0.startDate >= timelineStart && $0.startDate <= windowEnd }
++
++        let carbStatuses = carbEntries.map(to: counteraction,
++                                           carbRatio: carbRatioTimeline,
++                                           insulinSensitivity: sensitivityTimeline)
++
++        let cobValues = carbStatuses.dynamicCarbsOnBoard(from: windowStart, to: windowEnd)
++        let carbEffects = carbStatuses.dynamicGlucoseEffects(from: windowStart,
++                                                             to: windowEnd,
++                                                             carbRatios: carbRatioTimeline,
++                                                             insulinSensitivities: sensitivityTimeline)
++
++        return AdaptiveSeries(glucose: glucose,
++                              counteraction: counteraction,
++                              cobValues: cobValues,
++                              carbEffects: carbEffects,
++                              iobValues: iobValues,
++                              source: .nightscout)
++    }
++}
++
++// MARK: - Rapporto insulina/carboidrati
++
++private extension AdaptiveTherapyManager {
++
++    /// Date dei cambi pod, per capire se l'effetto dipende dall'eta' del sito.
++    ///
++    /// Disponibile solo sul percorso locale: gli eventi pompa non passano dalla fonte
++    /// esterna. Quando manca, la statistica per giorno del pod semplicemente non compare.
++    func podChangeDates(start: Date, end: Date) async throws -> [Date] {
++        let events: [PersistedPumpEvent] = try await withCheckedThrowingContinuation { continuation in
++            doseStore.getPumpEventValues(since: start) { result in
++                switch result {
++                case .success(let events): continuation.resume(returning: events)
++                case .failure(let error): continuation.resume(throwing: error)
++                }
++            }
++        }
++
++        return events
++            .filter { event in
++                guard let type = event.type else { return false }
++                switch type {
++                case .prime, .replaceComponent:
++                    return true
++                default:
++                    return false
++                }
++            }
++            .map { $0.date }
++            .filter { $0 <= end }
++            .sorted()
++    }
++
++    /// Valuta ogni pasto isolato: quanto ha fatto salire la glicemia rispetto a quanto il
++    /// modello si aspettava.
++    ///
++    /// L'escursione osservata e' l'integrale dell'insulin counteraction effect sulla finestra
++    /// del pasto, cioe' il movimento della glicemia al netto di tutta l'insulina che stava
++    /// agendo - il bolo del pasto incluso. Quella attesa e' grammi per il fattore
++    /// carboidrati. Se la prima supera la seconda, per quel pasto serviva piu' insulina.
++    func assessMeals(carbEntries: [StoredCarbEntry],
++                     counteraction: [GlucoseEffectVelocity],
++                     glucose: [StoredGlucoseSample],
++                     saturatedMeals: [AdaptiveMealObservation],
++                     podChanges: [Date],
++                     windowStart: Date,
++                     windowEnd: Date,
++                     inputs: AdaptiveTherapyInputs) -> [AdaptiveMealAssessment]
++    {
++        guard let carbRatioSchedule = inputs.carbRatioSchedule else { return [] }
++
++        let velocityUnit = HKUnit.milligramsPerDeciliterPerMinute
++        let saturatedDates = Set(saturatedMeals.map { $0.startDate })
++        let sorted = carbEntries.sorted { $0.startDate < $1.startDate }
++        var assessments: [AdaptiveMealAssessment] = []
++
++        for (index, entry) in sorted.enumerated() {
++            let grams = entry.quantity.doubleValue(for: .gram())
++            guard grams >= configuration.minimumMealGrams else { continue }
++
++            // Un pasto che ha saturato il tetto del modello non serve: non sappiamo dove
++            // finisce davvero, quindi non sappiamo su quale finestra integrare.
++            guard !saturatedDates.contains(entry.startDate) else { continue }
++
++            let declared = entry.absorptionTime ?? LoopCoreConstants.defaultCarbAbsorptionTimes.medium
++            let windowEndDate = entry.startDate
++                .addingTimeInterval(declared * CarbMath.defaultAbsorptionTimeOverrun)
++                .addingTimeInterval(configuration.mealIsolationTail)
++
++            guard windowEndDate <= windowEnd else { continue }
++
++            // Isolato: nessun altro pasto mentre questo sta ancora assorbendo.
++            let overlapped = sorted[(index + 1)...].contains { $0.startDate < windowEndDate }
++            guard !overlapped else { continue }
++
++            // Copertura CGM: senza dati non si integra niente di sensato.
++            let expectedSamples = windowEndDate.timeIntervalSince(entry.startDate) / .minutes(5)
++            let actualSamples = glucose.filter { $0.startDate >= entry.startDate && $0.startDate <= windowEndDate }.count
++            let coverage = expectedSamples > 0 ? Double(actualSamples) / expectedSamples : 0
++            guard coverage >= configuration.minimumMealGlucoseCoverage else { continue }
++
++            // Integrale dell'ICE sulla finestra, in mg/dL.
++            var observedRise = 0.0
++            for velocity in counteraction where velocity.startDate >= entry.startDate && velocity.startDate < windowEndDate {
++                let minutes = velocity.endDate.timeIntervalSince(velocity.startDate) / 60
++                guard minutes > 0 else { continue }
++                observedRise += velocity.quantity.doubleValue(for: velocityUnit) * minutes
++            }
++
++            // Attesa dal modello: grammi per il fattore carboidrati (ISF diviso CR).
++            let isf = inputs.insulinSensitivitySchedule
++                .quantity(at: entry.startDate)
++                .doubleValue(for: .milligramsPerDeciliter)
++            let carbRatio = carbRatioSchedule.value(at: entry.startDate)
++            guard isf > 0, carbRatio > 0 else { continue }
++
++            let modeledRise = grams * isf / carbRatio
++            guard modeledRise > 0 else { continue }
++
++            let ratio = observedRise / modeledRise
++
++            // Salita maggiore dell'attesa vuol dire che serviva piu' insulina per grammo,
++            // cioe' un rapporto piu' piccolo. Il moltiplicatore e' quindi l'inverso.
++            guard ratio > 0.01 else { continue }
++            let multiplier = clampMultiplier(1 / ratio)
++
++            // Peso: i pasti grandi hanno un rapporto segnale/rumore migliore, e la copertura
++            // CGM entra direttamente.
++            let sizeTerm = min(1, grams / 40)
++            let weight = max(0, min(1, sizeTerm * coverage))
++
++            let podDay = podChanges.last { $0 <= entry.startDate }.map { change in
++                Int(entry.startDate.timeIntervalSince(change) / .hours(24))
++            }
++
++            assessments.append(AdaptiveMealAssessment(
++                startDate: entry.startDate,
++                grams: grams,
++                observedRise: observedRise,
++                modeledRise: modeledRise,
++                multiplier: multiplier,
++                weight: weight,
++                podDay: podDay
++            ))
++        }
++
++        return assessments
++    }
++
++    func summarizeCarbRatio(from assessments: [AdaptiveMealAssessment]) -> AdaptiveCarbRatioRecommendation? {
++        let usable = assessments.filter { $0.weight > 0 }
++        guard !usable.isEmpty else {
++            return AdaptiveCarbRatioRecommendation(multiplier: 1, effectiveMeals: 0, dispersion: 0,
++                                                   isActionable: false,
++                                                   notes: ["nessun pasto isolato e completo nella finestra"],
++                                                   byPodDay: nil)
++        }
++
++        let weights = usable.map { $0.weight }
++        let values = usable.map { $0.multiplier }
++
++        let sumWeights = weights.reduce(0, +)
++        let sumSquaredWeights = weights.reduce(0) { $0 + $1 * $1 }
++        let effectiveMeals = sumSquaredWeights > 0 ? (sumWeights * sumWeights) / sumSquaredWeights : 0
++
++        let center = weightedMedian(values: values, weights: weights)
++        let dispersion = weightedMedian(values: values.map { abs($0 - center) }, weights: weights)
++
++        var notes: [String] = []
++        var actionable = true
++
++        if effectiveMeals < configuration.minimumEffectiveMeals {
++            actionable = false
++            notes.append(String(format: "solo %.1f pasti utilizzabili, ne servono %.0f",
++                                effectiveMeals, configuration.minimumEffectiveMeals))
++        }
++
++        if dispersion > configuration.maximumMealDispersion {
++            actionable = false
++            notes.append(String(format: "dispersione %.0f%%: i pasti non si somigliano abbastanza", dispersion * 100))
++        }
++
++        // Raggruppamento per eta' del pod: se l'effetto cambia col giorno del sito, si vede qui.
++        var byPodDay: [String: Double]? = nil
++        let withPodDay = usable.filter { $0.podDay != nil }
++        if withPodDay.count >= 6 {
++            var buckets: [String: [AdaptiveMealAssessment]] = [:]
++            for meal in withPodDay {
++                let day = meal.podDay ?? 0
++                let key = day >= 3 ? "3+" : "\(day)"
++                buckets[key, default: []].append(meal)
++            }
++            var summary: [String: Double] = [:]
++            for (key, meals) in buckets where meals.count >= 2 {
++                summary[key] = weightedMedian(values: meals.map { $0.multiplier },
++                                              weights: meals.map { $0.weight })
++            }
++            if summary.count >= 2 {
++                byPodDay = summary
++            }
++        }
++
++        return AdaptiveCarbRatioRecommendation(
++            multiplier: actionable ? clampMultiplier(center) : 1,
++            effectiveMeals: effectiveMeals,
++            dispersion: dispersion,
++            isActionable: actionable,
++            notes: notes,
++            byPodDay: byPodDay
++        )
++    }
++}
 diff --git a/Loop/Loop/Managers/AdaptiveTherapyModels.swift b/Loop/Loop/Managers/AdaptiveTherapyModels.swift
 new file mode 100644
-index 00000000..14fe0e2b
+index 00000000..493b8d54
 --- /dev/null
 +++ b/Loop/Loop/Managers/AdaptiveTherapyModels.swift
-@@ -0,0 +1,198 @@
+@@ -0,0 +1,277 @@
 +//
 +//  AdaptiveTherapyModels.swift
 +//  Loop
@@ -1022,6 +1822,30 @@ index 00000000..14fe0e2b
 +
 +    /// Intervallo minimo fra due aggiornamenti dei moltiplicatori.
 +    var minimumUpdateInterval: TimeInterval = .hours(12)
++
++    // --- Rapporto insulina/carboidrati ---
++
++    /// Sotto questa quantita' un pasto non dice niente sul rapporto: il rumore della
++    /// glicemia e' dello stesso ordine dell'escursione che il pasto produce.
++    var minimumMealGrams: Double = 15
++
++    /// Un pasto vale solo se e' isolato: nessun altro pasto mentre sta ancora assorbendo,
++    /// altrimenti non si sa a chi attribuire l'escursione.
++    var mealIsolationTail: TimeInterval = .minutes(45)
++
++    /// Numero efficace minimo di pasti perche' il rapporto produca una raccomandazione.
++    var minimumEffectiveMeals: Double = 6
++
++    /// Dispersione massima tollerata sui moltiplicatori dei pasti.
++    var maximumMealDispersion: Double = 0.25
++
++    /// Copertura CGM minima nella finestra del pasto.
++    var minimumMealGlucoseCoverage: Double = 0.7
++
++    /// Frazione della finestra che gli archivi locali devono coprire perche' li si usi.
++    /// Sotto questa soglia si prova la fonte esterna: dopo una reinstallazione in locale
++    /// non c'e' niente, mentre sul server lo storico c'e' da mesi.
++    var minimumLocalCoverage: Double = 0.6
 +
 +    /// Frazione minima dei giorni della finestra che deve contribuire a una fascia.
 +    /// Una fascia riceve al massimo un bin per giorno, quindi la soglia va rapportata al
@@ -1143,8 +1967,18 @@ index 00000000..14fe0e2b
 +    }
 +}
 +
++/// Provenienza dei dati analizzati.
++enum AdaptiveDataSource: String, Codable {
++    case localStores = "archivi locali"
++    case nightscout = "Nightscout"
++}
++
 +/// Esito completo di un'analisi. Persistito cosi' com'e' per la schermata di osservazione.
 +struct AdaptiveTherapyReport: Codable {
++    /// Opzionale perche' i rapporti salvati prima che esistesse questo campo devono
++    /// continuare a decodificarsi.
++    let dataSource: AdaptiveDataSource?
++
 +    let generatedAt: Date
 +    let windowStart: Date
 +    let windowEnd: Date
@@ -1162,12 +1996,57 @@ index 00000000..14fe0e2b
 +    /// al suggerimento "dichiara questi pasti come lenti".
 +    let saturatedMeals: [AdaptiveMealObservation]
 +
++    /// Rapporto insulina/carboidrati. Opzionale per non rompere i rapporti gia' salvati.
++    let carbRatio: AdaptiveCarbRatioRecommendation?
++
++    /// I singoli pasti valutati, per poter guardare i numeri invece di fidarsi della media.
++    let mealAssessments: [AdaptiveMealAssessment]?
++
 +    /// Vero quando il motore non ha potuto concludere nulla, con il motivo.
 +    let inconclusiveReason: String?
 +
 +    var actionableSlots: [AdaptiveSlotRecommendation] {
 +        slots.filter { $0.isActionable }
 +    }
++}
++
++/// Valutazione di un singolo pasto ai fini del rapporto insulina/carboidrati.
++struct AdaptiveMealAssessment: Codable, Identifiable {
++    let startDate: Date
++    let grams: Double
++
++    /// Escursione glicemica realmente attribuibile ai carboidrati, in mg/dL.
++    /// E' l'integrale dell'insulin counteraction effect sulla finestra del pasto: quello che
++    /// la glicemia ha fatto al netto di tutta l'insulina che stava agendo.
++    let observedRise: Double
++
++    /// Escursione che il modello si aspettava: grammi per il fattore carboidrati (ISF/CR).
++    let modeledRise: Double
++
++    /// Moltiplicatore proposto per il rapporto in quella fascia.
++    /// Sopra 1 vuol dire meno insulina per grammo, sotto 1 piu' insulina per grammo.
++    let multiplier: Double
++
++    /// Quanto pesa questo pasto nella statistica.
++    let weight: Double
++
++    /// Giorni trascorsi dall'ultimo cambio pod, se noto.
++    let podDay: Int?
++
++    var id: Date { startDate }
++}
++
++/// Raccomandazione complessiva sul rapporto insulina/carboidrati.
++struct AdaptiveCarbRatioRecommendation: Codable {
++    let multiplier: Double
++    let effectiveMeals: Double
++    let dispersion: Double
++    let isActionable: Bool
++    let notes: [String]
++
++    /// Moltiplicatore medio raggruppato per giorno di vita del pod, quando ci sono
++    /// abbastanza pasti per dire qualcosa. Chiave = giorno, valore = moltiplicatore.
++    let byPodDay: [String: Double]?
 +}
 +
 +/// Un pasto il cui assorbimento osservato ha toccato il tetto consentito dal modello.
@@ -1184,11 +2063,43 @@ index 00000000..14fe0e2b
 +        return observedAbsorption / declaredAbsorption
 +    }
 +}
+diff --git a/Loop/Loop/Managers/DeviceDataManager.swift b/Loop/Loop/Managers/DeviceDataManager.swift
+index ff678a88..d0191bc7 100644
+--- a/Loop/Loop/Managers/DeviceDataManager.swift
++++ b/Loop/Loop/Managers/DeviceDataManager.swift
+@@ -1390,6 +1390,15 @@ extension DeviceDataManager {
+ 
+ // MARK: - LoopDataManagerDelegate
+ extension DeviceDataManager: LoopDataManagerDelegate {
++
++    /// Il primo servizio attivo che sappia rileggere lo storico. Oggi e' Nightscout, ma il
++    /// motore adattivo non lo sa e non deve saperlo: conosce solo il protocollo.
++    func historicalTherapyDataService(for manager: LoopDataManager) -> HistoricalTherapyDataService? {
++        servicesManager?.activeServices
++            .compactMap { $0 as? HistoricalTherapyDataService }
++            .first { $0.isHistoricalTherapyDataAvailable }
++    }
++
+     func roundBasalRate(unitsPerHour: Double) -> Double {
+         guard let pumpManager = pumpManager else {
+             return unitsPerHour
+diff --git a/Loop/Loop/Managers/ExtensionDataManager.swift b/Loop/Loop/Managers/ExtensionDataManager.swift
+index 9261dcfc..c8e2789a 100644
+--- a/Loop/Loop/Managers/ExtensionDataManager.swift
++++ b/Loop/Loop/Managers/ExtensionDataManager.swift
+@@ -166,6 +166,7 @@ final class ExtensionDataManager {
+             context.cgmLifecycleProgressContext = DeviceLifecycleProgressContext(from: dataManager.cgmLifecycleProgress)
+ 
+             context.carbsOnBoard = state.carbsOnBoard?.quantity.doubleValue(for: .gram())
++            context.activeInsulin = state.insulinOnBoard?.value
+             
+             completionHandler(context)
+         }
 diff --git a/Loop/Loop/Managers/LoopDataManager.swift b/Loop/Loop/Managers/LoopDataManager.swift
-index c9aef285..f326d717 100644
+index c9aef285..4c5e4b95 100644
 --- a/Loop/Loop/Managers/LoopDataManager.swift
 +++ b/Loop/Loop/Managers/LoopDataManager.swift
-@@ -41,6 +41,42 @@ final class LoopDataManager {
+@@ -41,6 +41,46 @@ final class LoopDataManager {
  
      private let glucoseStore: GlucoseStoreProtocol
  
@@ -1221,17 +2132,21 @@ index c9aef285..f326d717 100644
 +            return AdaptiveTherapyInputs(
 +                basalSchedule: basalSchedule,
 +                insulinSensitivitySchedule: sensitivitySchedule,
++                carbRatioSchedule: self.carbRatioScheduleApplyingOverrideHistory,
 +                targetSchedule: targetSchedule,
 +                suspendThreshold: self.settings.suspendThreshold?.quantity,
 +                integralRetrospectiveCorrectionEnabled: UserDefaults.standard.integralRetrospectiveCorrectionEnabled
 +            )
++        } historicalServiceProvider: { [weak self] in
++            guard let self = self else { return nil }
++            return self.delegate?.historicalTherapyDataService(for: self)
 +        }
 +    }()
 +
      let latestStoredSettingsProvider: LatestStoredSettingsProvider
  
      weak var delegate: LoopDataManagerDelegate?
-@@ -908,6 +944,10 @@ extension LoopDataManager {
+@@ -908,6 +948,10 @@ extension LoopDataManager {
          logger.default("Loop ended")
          notify(forChange: .loopFinished)
  
@@ -1242,12 +2157,31 @@ index c9aef285..f326d717 100644
          if FeatureFlags.missedMealNotifications {
              let samplesStart = now().addingTimeInterval(-MissedMealSettings.maxRecency)
              carbStore.getGlucoseEffects(start: samplesStart, end: now(), effectVelocities: insulinCounteractionEffects) {[weak self] result in
+@@ -2357,6 +2401,18 @@ protocol LoopDataManagerDelegate: AnyObject {
+ 
+     /// The cgm manager status, if one exists.
+     var cgmManagerStatus: CGMManagerStatus? { get }
++
++    /// Un servizio capace di rileggere lo storico terapeutico, se ce n'e' uno configurato.
++    /// Serve al motore adattivo quando gli archivi locali non coprono la finestra richiesta.
++    func historicalTherapyDataService(for manager: LoopDataManager) -> HistoricalTherapyDataService?
++}
++
++extension LoopDataManagerDelegate {
++    /// Implementazione di default: nessuna fonte esterna. Evita di rompere i conformi
++    /// esistenti, a partire dai mock dei test.
++    func historicalTherapyDataService(for manager: LoopDataManager) -> HistoricalTherapyDataService? {
++        return nil
++    }
+ }
+ 
+ private extension TemporaryScheduleOverride {
 diff --git a/Loop/Loop/Views/AdaptiveTherapyView.swift b/Loop/Loop/Views/AdaptiveTherapyView.swift
 new file mode 100644
-index 00000000..fbba710d
+index 00000000..93d346db
 --- /dev/null
 +++ b/Loop/Loop/Views/AdaptiveTherapyView.swift
-@@ -0,0 +1,177 @@
+@@ -0,0 +1,216 @@
 +//
 +//  AdaptiveTherapyView.swift
 +//  Loop
@@ -1279,6 +2213,7 @@ index 00000000..fbba710d
 +
 +            if let report = report {
 +                summarySection(report)
++                carbRatioSection(report)
 +                slotsSection(report)
 +                exclusionsSection(report)
 +                mealsSection(report)
@@ -1303,6 +2238,8 @@ index 00000000..fbba710d
 +            row(NSLocalizedString("Generated", comment: "Label"), Self.dateFormatter.string(from: report.generatedAt))
 +            row(NSLocalizedString("Window", comment: "Label"),
 +                "\(Self.dayFormatter.string(from: report.windowStart)) – \(Self.dayFormatter.string(from: report.windowEnd))")
++            row(NSLocalizedString("Data source", comment: "Label"),
++                report.dataSource?.rawValue ?? "—")
 +            row(NSLocalizedString("Readable intervals", comment: "Label"),
 +                String(format: "%.0f / %d", report.effectiveBins, report.totalBins))
 +            row(NSLocalizedString("Usable time slots", comment: "Label"),
@@ -1341,6 +2278,42 @@ index 00000000..fbba710d
 +                    }
 +                    .padding(.vertical, 2)
 +                }
++            }
++        }
++    }
++
++    @ViewBuilder
++    private func carbRatioSection(_ report: AdaptiveTherapyReport) -> some View {
++        if let carbRatio = report.carbRatio {
++            Section {
++                HStack {
++                    Text(NSLocalizedString("Carb ratio", comment: "Label for the carb ratio proposal"))
++                    Spacer()
++                    Text(carbRatio.isActionable ? Self.percentString(carbRatio.multiplier) : "—")
++                        .foregroundColor(carbRatio.isActionable ? Self.color(for: carbRatio.multiplier) : .secondary)
++                        .font(.body.monospacedDigit())
++                }
++
++                row(NSLocalizedString("Meals used", comment: "Label"),
++                    String(format: "%.1f", carbRatio.effectiveMeals))
++
++                ForEach(carbRatio.notes, id: \.self) { note in
++                    Text(note)
++                        .font(.caption)
++                        .foregroundColor(.secondary)
++                }
++
++                if let byPodDay = carbRatio.byPodDay {
++                    let keys = byPodDay.keys.sorted()
++                    ForEach(keys, id: \.self) { key in
++                        row(String(format: NSLocalizedString("Pod day %@", comment: "Label for a pod-age bucket"), key),
++                            Self.percentString(byPodDay[key] ?? 1))
++                    }
++                }
++            } header: {
++                Text(NSLocalizedString("Meal boluses", comment: "Section header for the carb ratio"))
++            } footer: {
++                Text(NSLocalizedString("This looks only at isolated meals: how much glucose actually rose compared with what the model expected. Above zero means less insulin per gram, below means more. If the pod-day rows differ a lot, the age of the site is affecting your meals.", comment: "Footer explaining the carb ratio estimate"))
 +            }
 +        }
 +    }

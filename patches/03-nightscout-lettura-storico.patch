@@ -1,5 +1,5 @@
 diff --git a/NightscoutService/NightscoutServiceKit/NightscoutService.swift b/NightscoutService/NightscoutServiceKit/NightscoutService.swift
-index 4626630..791aec6 100644
+index 4626630..c7aa4f8 100644
 --- a/NightscoutService/NightscoutServiceKit/NightscoutService.swift
 +++ b/NightscoutService/NightscoutServiceKit/NightscoutService.swift
 @@ -388,6 +388,62 @@ extension NightscoutService: RemoteDataService {
@@ -65,3 +65,149 @@ index 4626630..791aec6 100644
      public func uploadCgmEventData(_ stored: [LoopKit.PersistedCgmEvent], completion: @escaping (Result<Bool, Error>) -> Void) {
          guard hasConfiguration, let uploader = uploader else {
              completion(.success(true))
+@@ -543,3 +599,145 @@ extension KeychainManager {
+ }
+ 
+ fileprivate let NightscoutAPIAccount = "NightscoutAPI"
++
++
++// MARK: - HistoricalTherapyDataService
++
++extension NightscoutService: HistoricalTherapyDataService {
++
++    public var isHistoricalTherapyDataAvailable: Bool {
++        hasConfiguration && uploader != nil
++    }
++
++    /// Rilegge glicemie e trattamenti dal server e li converte nei tipi di LoopKit.
++    ///
++    /// La conversione sta qui e non nell'app perche' NightscoutServiceKit e' un plugin caricato
++    /// a runtime: il target Loop non lo collega e non puo' nemmeno importarlo, quindi non
++    /// vedrebbe i tipi di NightscoutKit.
++    public func fetchHistoricalTherapyData(interval: DateInterval,
++                                           completion: @escaping (Result<HistoricalTherapyData, Error>) -> Void)
++    {
++        guard hasConfiguration, let uploader = uploader else {
++            completion(.failure(NightscoutServiceError.missingCredentials))
++            return
++        }
++
++        // Tetti generosi: tre settimane sono circa 6000 glicemie e qualche centinaio di
++        // trattamenti. Meglio chiedere troppo che tornare con una finestra bucata, perche'
++        // un buco non dichiarato diventa una statistica sbagliata.
++        uploader.fetchGlucose(dateInterval: interval, maxCount: 20000) { glucoseResult in
++            switch glucoseResult {
++            case .failure(let error):
++                completion(.failure(error))
++
++            case .success(let entries):
++                uploader.fetchTreatments(dateInterval: interval, maxCount: 20000) { treatmentResult in
++                    switch treatmentResult {
++                    case .failure(let error):
++                        completion(.failure(error))
++
++                    case .success(let treatments):
++                        let data = HistoricalTherapyData(
++                            glucose: NightscoutService.glucoseSamples(from: entries),
++                            doses: NightscoutService.doses(from: treatments),
++                            carbEntries: NightscoutService.carbEntries(from: treatments)
++                        )
++                        completion(.success(data))
++                    }
++                }
++            }
++        }
++    }
++
++    // MARK: Conversione
++
++    private static func glucoseSamples(from entries: [GlucoseEntry]) -> [StoredGlucoseSample] {
++        entries
++            .map { entry in
++                StoredGlucoseSample(
++                    syncIdentifier: "nightscout-\(entry.date.timeIntervalSince1970)",
++                    startDate: entry.date,
++                    quantity: HKQuantity(unit: .milligramsPerDeciliter, doubleValue: entry.glucose)
++                )
++            }
++            .sorted { $0.startDate < $1.startDate }
++    }
++
++    private static func doses(from treatments: [NightscoutTreatment]) -> [DoseEntry] {
++        var doses: [DoseEntry] = []
++
++        for treatment in treatments {
++            let identifier = treatment.syncIdentifier ?? treatment.id ?? "ns-\(treatment.timestamp.timeIntervalSince1970)"
++
++            if let temp = treatment as? TempBasalNightscoutTreatment {
++                doses.append(DoseEntry(
++                    type: .tempBasal,
++                    startDate: temp.timestamp,
++                    endDate: temp.timestamp.addingTimeInterval(temp.duration),
++                    value: temp.rate,
++                    unit: .unitsPerHour,
++                    deliveredUnits: temp.amount,
++                    syncIdentifier: identifier,
++                    automatic: temp.automatic
++                ))
++
++            } else if let bolus = treatment as? BolusNightscoutTreatment {
++                doses.append(DoseEntry(
++                    type: .bolus,
++                    startDate: bolus.timestamp,
++                    endDate: bolus.timestamp.addingTimeInterval(bolus.duration),
++                    value: bolus.amount,
++                    unit: .units,
++                    deliveredUnits: bolus.amount,
++                    syncIdentifier: identifier,
++                    automatic: bolus.automatic
++                ))
++
++            } else if let meal = treatment as? MealBolusNightscoutTreatment, let insulin = meal.insulin, insulin > 0 {
++                doses.append(DoseEntry(
++                    type: .bolus,
++                    startDate: meal.timestamp,
++                    endDate: meal.timestamp,
++                    value: insulin,
++                    unit: .units,
++                    deliveredUnits: insulin,
++                    syncIdentifier: identifier,
++                    automatic: false
++                ))
++            }
++        }
++
++        return doses.sorted { $0.startDate < $1.startDate }
++    }
++
++    private static func carbEntries(from treatments: [NightscoutTreatment]) -> [StoredCarbEntry] {
++        var entries: [StoredCarbEntry] = []
++
++        for treatment in treatments {
++            let identifier = treatment.syncIdentifier ?? treatment.id ?? "ns-\(treatment.timestamp.timeIntervalSince1970)"
++
++            if let meal = treatment as? MealBolusNightscoutTreatment, meal.carbs > 0 {
++                entries.append(StoredCarbEntry(
++                    startDate: meal.timestamp,
++                    quantity: HKQuantity(unit: .gram(), doubleValue: meal.carbs),
++                    syncIdentifier: identifier,
++                    foodType: meal.foodType,
++                    absorptionTime: meal.absorptionTime,
++                    createdByCurrentApp: false
++                ))
++
++            } else if let correction = treatment as? CarbCorrectionNightscoutTreatment, correction.carbs > 0 {
++                entries.append(StoredCarbEntry(
++                    startDate: correction.timestamp,
++                    quantity: HKQuantity(unit: .gram(), doubleValue: Double(correction.carbs)),
++                    syncIdentifier: identifier,
++                    foodType: correction.foodType,
++                    absorptionTime: correction.absorptionTime,
++                    createdByCurrentApp: false
++                ))
++            }
++        }
++
++        return entries.sorted { $0.startDate < $1.startDate }
++    }
++}

@@ -1,0 +1,50 @@
+diff --git a/LoopKit/LoopKit/Service/RemoteDataService.swift b/LoopKit/LoopKit/Service/RemoteDataService.swift
+index edf169d7..a91e6e08 100644
+--- a/LoopKit/LoopKit/Service/RemoteDataService.swift
++++ b/LoopKit/LoopKit/Service/RemoteDataService.swift
+@@ -128,3 +128,45 @@ public extension RemoteDataService {
+     var pumpEventDataLimit: Int? { return nil }
+     var settingsDataLimit: Int? { return nil }
+ }
++
++
++// MARK: - Lettura dello storico da una fonte esterna
++
++import HealthKit
++
++/// Storico terapeutico riletto da una fonte esterna (per esempio Nightscout), gia' convertito
++/// nei tipi di LoopKit.
++///
++/// Serve quando gli archivi locali non coprono la finestra richiesta: dopo una reinstallazione,
++/// o subito dopo aver allungato la durata della cache, in locale non c'e' abbastanza storia per
++/// dire alcunche' sulla terapia, mentre sul server c'e' da mesi.
++public struct HistoricalTherapyData {
++    public let glucose: [StoredGlucoseSample]
++    public let doses: [DoseEntry]
++    public let carbEntries: [StoredCarbEntry]
++
++    public init(glucose: [StoredGlucoseSample], doses: [DoseEntry], carbEntries: [StoredCarbEntry]) {
++        self.glucose = glucose
++        self.doses = doses
++        self.carbEntries = carbEntries
++    }
++
++    public var isEmpty: Bool {
++        glucose.isEmpty
++    }
++}
++
++/// Un servizio capace di restituire storico terapeutico, non solo di riceverlo.
++///
++/// `RemoteDataService` va in una direzione sola, dall'app al server. Questo protocollo apre la
++/// direzione opposta, e resta separato apposta: un servizio puo' benissimo saper caricare senza
++/// saper rileggere.
++public protocol HistoricalTherapyDataService: AnyObject {
++
++    /// Falso quando il servizio non e' configurato o non puo' servire storico.
++    var isHistoricalTherapyDataAvailable: Bool { get }
++
++    /// I dati sono in sola lettura: chi li riceve non deve scriverli negli archivi locali.
++    func fetchHistoricalTherapyData(interval: DateInterval,
++                                    completion: @escaping (Result<HistoricalTherapyData, Error>) -> Void)
++}
