@@ -1,0 +1,67 @@
+diff --git a/NightscoutService/NightscoutServiceKit/NightscoutService.swift b/NightscoutService/NightscoutServiceKit/NightscoutService.swift
+index 4626630..791aec6 100644
+--- a/NightscoutService/NightscoutServiceKit/NightscoutService.swift
++++ b/NightscoutService/NightscoutServiceKit/NightscoutService.swift
+@@ -388,6 +388,62 @@ extension NightscoutService: RemoteDataService {
+         })
+     }
+ 
++    // MARK: - Lettura dello storico
++    //
++    // NightscoutClient sa gia' leggere entries, treatments, devicestatus e profili: e' il
++    // servizio a non averli mai rilanciati, perche' RemoteDataService e' unidirezionale in
++    // upload. Questi quattro metodi aprono il varco, e servono al backfill iniziale del
++    // motore adattivo: lo store locale tiene 21 giorni, ma quando la finestra viene
++    // allargata i dati gia' cancellati non tornano indietro.
++
++    /// Glicemie storiche.
++    public func fetchGlucose(dateInterval: DateInterval, maxCount: Int = 5000, completion: @escaping (Result<[GlucoseEntry], Error>) -> Void) {
++        guard hasConfiguration, let uploader = uploader else {
++            completion(.failure(NightscoutServiceError.missingCredentials))
++            return
++        }
++
++        uploader.fetchGlucose(dateInterval: dateInterval, maxCount: maxCount) { result in
++            completion(result.mapError { $0 as Error })
++        }
++    }
++
++    /// Trattamenti storici: carboidrati, boli, basali temporanee, override.
++    public func fetchTreatments(dateInterval: DateInterval, maxCount: Int = 5000, completion: @escaping (Result<[NightscoutTreatment], Error>) -> Void) {
++        guard hasConfiguration, let uploader = uploader else {
++            completion(.failure(NightscoutServiceError.missingCredentials))
++            return
++        }
++
++        uploader.fetchTreatments(dateInterval: dateInterval, maxCount: maxCount) { result in
++            completion(result.mapError { $0 as Error })
++        }
++    }
++
++    /// Device status storici: portano IOB, COB e le raccomandazioni di allora.
++    public func fetchDeviceStatus(dateInterval: DateInterval, maxCount: Int = 5000, completion: @escaping (Result<[DeviceStatus], Error>) -> Void) {
++        guard hasConfiguration, let uploader = uploader else {
++            completion(.failure(NightscoutServiceError.missingCredentials))
++            return
++        }
++
++        uploader.fetchDeviceStatus(dateInterval: dateInterval, maxCount: maxCount) { result in
++            completion(result.mapError { $0 as Error })
++        }
++    }
++
++    /// Profili storici: servono a sapere quale basale era davvero in vigore quel giorno.
++    public func fetchProfiles(dateInterval: DateInterval, maxCount: Int = 100, completion: @escaping (Result<[ProfileSet], Error>) -> Void) {
++        guard hasConfiguration, let uploader = uploader else {
++            completion(.failure(NightscoutServiceError.missingCredentials))
++            return
++        }
++
++        uploader.fetchProfiles(dateInterval: dateInterval, maxCount: maxCount) { result in
++            completion(result.mapError { $0 as Error })
++        }
++    }
++
+     public func uploadCgmEventData(_ stored: [LoopKit.PersistedCgmEvent], completion: @escaping (Result<Bool, Error>) -> Void) {
+         guard hasConfiguration, let uploader = uploader else {
+             completion(.success(true))

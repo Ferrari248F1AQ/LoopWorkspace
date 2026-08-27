@@ -1,0 +1,1475 @@
+diff --git a/Loop/Loop.xcodeproj/project.pbxproj b/Loop/Loop.xcodeproj/project.pbxproj
+index 005d0e00..fb7e89b0 100644
+--- a/Loop/Loop.xcodeproj/project.pbxproj
++++ b/Loop/Loop.xcodeproj/project.pbxproj
+@@ -509,6 +509,9 @@
+ 		DDC389F82A2B620B0066E2E8 /* GlucoseBasedApplicationFactorStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDC389F72A2B620B0066E2E8 /* GlucoseBasedApplicationFactorStrategy.swift */; };
+ 		DDC389FA2A2B62470066E2E8 /* ConstantApplicationFactorStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDC389F92A2B62470066E2E8 /* ConstantApplicationFactorStrategy.swift */; };
+ 		DDC389FC2A2BC6670066E2E8 /* SettingsView+algorithmExperimentsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDC389FB2A2BC6670066E2E8 /* SettingsView+algorithmExperimentsSection.swift */; };
++		ADA9710000000000000000B1 /* AdaptiveTherapyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADA9710000000000000000A1 /* AdaptiveTherapyManager.swift */; };
++		ADA9710000000000000000B2 /* AdaptiveTherapyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADA9710000000000000000A2 /* AdaptiveTherapyModels.swift */; };
++		ADA9710000000000000000B3 /* AdaptiveTherapyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADA9710000000000000000A3 /* AdaptiveTherapyView.swift */; };
+ 		DDC389FE2A2C4C830066E2E8 /* GlucoseBasedApplicationFactorSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDC389FD2A2C4C830066E2E8 /* GlucoseBasedApplicationFactorSelectionView.swift */; };
+ 		E90909D124E34AC500F963D2 /* high_and_rising_with_cob_momentum_effect.json in Resources */ = {isa = PBXBuildFile; fileRef = E90909CC24E34AC500F963D2 /* high_and_rising_with_cob_momentum_effect.json */; };
+ 		E90909D224E34AC500F963D2 /* high_and_rising_with_cob_insulin_effect.json in Resources */ = {isa = PBXBuildFile; fileRef = E90909CD24E34AC500F963D2 /* high_and_rising_with_cob_insulin_effect.json */; };
+@@ -1329,6 +1332,9 @@
+ 		DDC389F72A2B620B0066E2E8 /* GlucoseBasedApplicationFactorStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseBasedApplicationFactorStrategy.swift; sourceTree = "<group>"; };
+ 		DDC389F92A2B62470066E2E8 /* ConstantApplicationFactorStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConstantApplicationFactorStrategy.swift; sourceTree = "<group>"; };
+ 		DDC389FB2A2BC6670066E2E8 /* SettingsView+algorithmExperimentsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SettingsView+algorithmExperimentsSection.swift"; sourceTree = "<group>"; };
++		ADA9710000000000000000A1 /* AdaptiveTherapyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveTherapyManager.swift; sourceTree = "<group>"; };
++		ADA9710000000000000000A2 /* AdaptiveTherapyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveTherapyModels.swift; sourceTree = "<group>"; };
++		ADA9710000000000000000A3 /* AdaptiveTherapyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveTherapyView.swift; sourceTree = "<group>"; };
+ 		DDC389FD2A2C4C830066E2E8 /* GlucoseBasedApplicationFactorSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlucoseBasedApplicationFactorSelectionView.swift; sourceTree = "<group>"; };
+ 		E90909CC24E34AC500F963D2 /* high_and_rising_with_cob_momentum_effect.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = high_and_rising_with_cob_momentum_effect.json; sourceTree = "<group>"; };
+ 		E90909CD24E34AC500F963D2 /* high_and_rising_with_cob_insulin_effect.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = high_and_rising_with_cob_insulin_effect.json; sourceTree = "<group>"; };
+@@ -1998,6 +2004,7 @@
+ 				C1AF062229426300002C1B19 /* ManualGlucoseEntryRow.swift */,
+ 				DDC389FD2A2C4C830066E2E8 /* GlucoseBasedApplicationFactorSelectionView.swift */,
+ 				DD3DBD282A33AFE9000F8B5B /* IntegralRetrospectiveCorrectionSelectionView.swift */,
++				ADA9710000000000000000A3 /* AdaptiveTherapyView.swift */,
+ 			);
+ 			path = Views;
+ 			sourceTree = "<group>";
+@@ -2019,6 +2026,8 @@
+ 				A9C62D862331703000535612 /* LoggingServicesManager.swift */,
+ 				A9D5C5B525DC6C6A00534873 /* LoopAppManager.swift */,
+ 				43A567681C94880B00334FAC /* LoopDataManager.swift */,
++				ADA9710000000000000000A1 /* AdaptiveTherapyManager.swift */,
++				ADA9710000000000000000A2 /* AdaptiveTherapyModels.swift */,
+ 				43C094491CACCC73001F6403 /* NotificationManager.swift */,
+ 				A97F250725E056D500F0EE19 /* OnboardingManager.swift */,
+ 				432E73CA1D24B3D6009AD15D /* RemoteDataServicesManager.swift */,
+@@ -3518,6 +3527,9 @@
+ 				C1AF062329426300002C1B19 /* ManualGlucoseEntryRow.swift in Sources */,
+ 				C148CEE724FD91BD00711B3B /* DeliveryUncertaintyAlertManager.swift in Sources */,
+ 				DDC389FC2A2BC6670066E2E8 /* SettingsView+algorithmExperimentsSection.swift in Sources */,
++				ADA9710000000000000000B1 /* AdaptiveTherapyManager.swift in Sources */,
++				ADA9710000000000000000B2 /* AdaptiveTherapyModels.swift in Sources */,
++				ADA9710000000000000000B3 /* AdaptiveTherapyView.swift in Sources */,
+ 				1D12D3B92548EFDD00B53E8B /* main.swift in Sources */,
+ 				435400341C9F878D00D5819C /* SetBolusUserInfo.swift in Sources */,
+ 				A9DCF32A25B0FABF00C89088 /* LoopUIColorPalette+Default.swift in Sources */,
+diff --git a/Loop/Loop/Managers/AdaptiveTherapyManager.swift b/Loop/Loop/Managers/AdaptiveTherapyManager.swift
+new file mode 100644
+index 00000000..68c068b2
+--- /dev/null
++++ b/Loop/Loop/Managers/AdaptiveTherapyManager.swift
+@@ -0,0 +1,925 @@
++//
++//  AdaptiveTherapyManager.swift
++//  Loop
++//
++//  Motore retrospettivo multi-giorno: stima quanto il profilo basale e l'ISF sono
++//  sbagliati, fascia per fascia, usando solo le finestre temporali in cui la glicemia
++//  si e' mossa per la terapia e non per un evento esterno.
++//
++//  In questa fase il motore CALCOLA E BASTA. Non tocca il dosaggio, non scrive le
++//  therapy settings, non erogare nulla. L'unico effetto e' un rapporto consultabile.
++//
++//  Differenze rispetto ai due algoritmi noti da cui prende le idee:
++//   - la retrospective correction di Loop guarda le ultime 3 ore e non esclude i pasti;
++//   - autotune attribuisce la deviazione all'ora in cui la vede invece che all'ora in
++//     cui e' stata erogata l'insulina che l'ha causata.
++//  Qui i pasti pesano invece di essere buttati (pesi continui) e la deviazione viene
++//  riportata indietro secondo la curva di attivita' insulinica.
++//
++
++import Foundation
++import HealthKit
++import LoopCore
++import LoopKit
++import os.log
++
++/// Fotografia delle impostazioni terapeutiche al momento dell'analisi.
++struct AdaptiveTherapyInputs {
++    let basalSchedule: BasalRateSchedule
++    let insulinSensitivitySchedule: InsulinSensitivitySchedule
++    let targetSchedule: GlucoseRangeSchedule
++    let suspendThreshold: HKQuantity?
++    let integralRetrospectiveCorrectionEnabled: Bool
++}
++
++final class AdaptiveTherapyManager {
++
++    private let log = OSLog(category: "AdaptiveTherapyManager")
++
++    private let glucoseStore: GlucoseStore
++    private let carbStore: CarbStore
++    private let doseStore: DoseStore
++
++    /// Fornisce basale, ISF e target correnti. E' una closure per non legare il motore
++    /// al ciclo di vita di LoopDataManager.
++    private let inputsProvider: () -> AdaptiveTherapyInputs?
++
++    private let configuration: AdaptiveTherapyConfiguration
++
++    static let reportKey = "com.loopkit.adaptiveTherapy.latestReport"
++    static let stateKey = "com.loopkit.adaptiveTherapy.multipliers"
++    static let isfStateKey = "com.loopkit.adaptiveTherapy.isfMultipliers"
++
++    /// Evita analisi sovrapposte: il calcolo gira su piu' giorni di dati e non ha senso
++    /// lanciarlo a ogni ciclo.
++    private let isAnalyzing = Locked(false)
++    private let lastAnalysisDate = Locked<Date?>(nil)
++
++    init(glucoseStore: GlucoseStore,
++         carbStore: CarbStore,
++         doseStore: DoseStore,
++         configuration: AdaptiveTherapyConfiguration = .default,
++         inputsProvider: @escaping () -> AdaptiveTherapyInputs?)
++    {
++        self.glucoseStore = glucoseStore
++        self.carbStore = carbStore
++        self.doseStore = doseStore
++        self.configuration = configuration
++        self.inputsProvider = inputsProvider
++    }
++
++    // MARK: - Stato persistito
++
++    /// Ultimo rapporto prodotto. Statico perche' la schermata di osservazione lo legge
++    /// senza dover conoscere l'istanza del motore.
++    static var storedReport: AdaptiveTherapyReport? {
++        guard let data = UserDefaults.standard.data(forKey: reportKey) else { return nil }
++        return try? JSONDecoder().decode(AdaptiveTherapyReport.self, from: data)
++    }
++
++    var latestReport: AdaptiveTherapyReport? {
++        AdaptiveTherapyManager.storedReport
++    }
++
++    private func store(_ report: AdaptiveTherapyReport) {
++        guard let data = try? JSONEncoder().encode(report) else { return }
++        UserDefaults.standard.set(data, forKey: AdaptiveTherapyManager.reportKey)
++    }
++
++    /// Moltiplicatori correnti per fascia, chiave = minuti dalla mezzanotte.
++    /// In fase di sola osservazione nessuno li legge per dosare: servono a rendere
++    /// graduale l'aggiornamento e a mostrare la traiettoria nel tempo.
++    private var storedIsfMultipliers: [Int: Double] {
++        get { AdaptiveTherapyManager.multipliers(forKey: AdaptiveTherapyManager.isfStateKey) }
++        set { AdaptiveTherapyManager.setMultipliers(newValue, forKey: AdaptiveTherapyManager.isfStateKey) }
++    }
++
++    private static func multipliers(forKey key: String) -> [Int: Double] {
++        guard let data = UserDefaults.standard.data(forKey: key),
++              let decoded = try? JSONDecoder().decode([String: Double].self, from: data)
++        else {
++            return [:]
++        }
++        var result: [Int: Double] = [:]
++        for (slot, value) in decoded {
++            if let slot = Int(slot) { result[slot] = value }
++        }
++        return result
++    }
++
++    private static func setMultipliers(_ values: [Int: Double], forKey key: String) {
++        var encodable: [String: Double] = [:]
++        for (slot, value) in values { encodable[String(slot)] = value }
++        guard let data = try? JSONEncoder().encode(encodable) else { return }
++        UserDefaults.standard.set(data, forKey: key)
++    }
++
++    private var storedMultipliers: [Int: Double] {
++        get {
++            guard let data = UserDefaults.standard.data(forKey: AdaptiveTherapyManager.stateKey),
++                  let decoded = try? JSONDecoder().decode([String: Double].self, from: data)
++            else {
++                return [:]
++            }
++            var result: [Int: Double] = [:]
++            for (key, value) in decoded {
++                if let slot = Int(key) { result[slot] = value }
++            }
++            return result
++        }
++        set {
++            var encodable: [String: Double] = [:]
++            for (slot, value) in newValue { encodable[String(slot)] = value }
++            guard let data = try? JSONEncoder().encode(encodable) else { return }
++            UserDefaults.standard.set(data, forKey: AdaptiveTherapyManager.stateKey)
++        }
++    }
++
++    // MARK: - Ingresso
++
++    /// Chiamato a fine ciclo. Non fa nulla se l'ultima analisi e' recente.
++    func analyzeIfNeeded() {
++        guard UserDefaults.standard.adaptiveTherapyEnabled else { return }
++
++        if let last = lastAnalysisDate.value,
++           Date().timeIntervalSince(last) < configuration.minimumUpdateInterval
++        {
++            return
++        }
++
++        // Prenotazione atomica: analyzeIfNeeded() arriva dalla coda del ciclo Loop e il
++        // rilascio dal pool cooperativo, quindi una Bool nuda non basta.
++        var alreadyRunning = false
++        isAnalyzing.mutate { running in
++            alreadyRunning = running
++            running = true
++        }
++        guard !alreadyRunning else { return }
++
++        Task { [weak self] in
++            guard let self = self else { return }
++            defer {
++                // Anche in caso di errore: altrimenti un'analisi che fallisce sempre
++                // (per esempio ISF non configurato) ripartirebbe a ogni ciclo, cioe'
++                // ogni cinque minuti, su ventuno giorni di dati.
++                self.lastAnalysisDate.value = Date()
++                self.isAnalyzing.value = false
++            }
++
++            do {
++                let report = try await self.analyze()
++                self.store(report)
++                self.log.default("Analisi adattiva completata: %{public}d fasce utilizzabili su %{public}d",
++                                 report.actionableSlots.count, report.slots.count)
++            } catch {
++                self.log.error("Analisi adattiva fallita: %{public}@", String(describing: error))
++            }
++        }
++    }
++
++    // MARK: - Analisi
++
++    func analyze(asOf now: Date = Date()) async throws -> AdaptiveTherapyReport {
++        guard let inputs = inputsProvider() else {
++            return AdaptiveTherapyReport(generatedAt: now, windowStart: now, windowEnd: now,
++                                         slots: [], totalBins: 0, effectiveBins: 0,
++                                         exclusionCounts: [:], saturatedMeals: [],
++                                         inconclusiveReason: "Impostazioni terapeutiche non disponibili")
++        }
++
++        let windowEnd = now
++        // Allineata alla mezzanotte locale: altrimenti i bin sono sfasati fino a 29 minuti
++        // rispetto ai confini delle fasce su cui poi leggiamo basale, ISF e target.
++        let calendar = Calendar.current
++        let windowStart = calendar.startOfDay(for: now)
++            .addingTimeInterval(-.days(Double(configuration.analysisWindowDays)))
++
++        // 1. Dati grezzi.
++        let glucose = try await glucoseStore.getGlucoseSamples(start: windowStart, end: windowEnd)
++        guard glucose.count > 12 else {
++            return AdaptiveTherapyReport(generatedAt: now, windowStart: windowStart, windowEnd: windowEnd,
++                                         slots: [], totalBins: 0, effectiveBins: 0,
++                                         exclusionCounts: [:], saturatedMeals: [],
++                                         inconclusiveReason: "Storico glicemico insufficiente")
++        }
++
++        let insulinEffects = try await insulinGlucoseEffects(start: windowStart, end: windowEnd)
++
++        // Insulin counteraction effect: quanto la glicemia si e' mossa al netto di cio'
++        // che l'insulina avrebbe dovuto fare. In una finestra senza carboidrati un ICE
++        // mediamente nullo significa che la basale e' giusta.
++        let counteraction = glucoseStore.counteractionEffects(for: glucose, to: insulinEffects)
++
++        let cobValues = try await carbsOnBoard(start: windowStart, end: windowEnd, velocities: counteraction)
++        let carbEffects = try await carbGlucoseEffects(start: windowStart, end: windowEnd, velocities: counteraction)
++        let carbEntries = try await carbStore.getCarbEntries(start: windowStart.addingTimeInterval(-.hours(12)), end: windowEnd)
++        let iobValues = try await insulinOnBoardValues(start: windowStart, end: windowEnd)
++
++        // 2. Pasti che hanno saturato il tetto di assorbimento del modello.
++        let saturatedMeals = detectSaturatedMeals(entries: carbEntries, carbEffects: carbEffects)
++
++        // 3. Binning e pesi.
++        let bins = buildBins(windowStart: windowStart,
++                             windowEnd: windowEnd,
++                             glucose: glucose,
++                             counteraction: counteraction,
++                             cobValues: cobValues,
++                             carbEffects: carbEffects,
++                             iobValues: iobValues,
++                             saturatedMeals: saturatedMeals,
++                             inputs: inputs)
++
++        // 4. Deconvoluzione: la deviazione vista alle 4 appartiene all'insulina dell'1.
++        let attributed = deconvolve(bins)
++
++        // 5. Stima per fascia oraria.
++        var slots = estimateSlots(from: attributed, inputs: inputs)
++
++        // 6. Continuita' fra fasce adiacenti.
++        slots = smooth(slots)
++
++        // 7. Aggiornamento graduale rispetto allo stato precedente.
++        slots = applyGradualUpdate(slots)
++
++        var exclusionCounts: [String: Int] = [:]
++        for bin in bins {
++            for reason in bin.exclusions {
++                exclusionCounts[reason.rawValue, default: 0] += 1
++            }
++        }
++
++        let report = AdaptiveTherapyReport(
++            generatedAt: now,
++            windowStart: windowStart,
++            windowEnd: windowEnd,
++            slots: slots,
++            totalBins: bins.count,
++            effectiveBins: bins.reduce(0) { $0 + $1.weight },
++            exclusionCounts: exclusionCounts,
++            saturatedMeals: saturatedMeals,
++            inconclusiveReason: slots.contains(where: { $0.isActionable }) ? nil : "Nessuna fascia con dati sufficienti"
++        )
++
++        return report
++    }
++}
++
++// MARK: - Accesso agli archivi (adattatori async sulle API a callback)
++
++private extension AdaptiveTherapyManager {
++
++    func insulinGlucoseEffects(start: Date, end: Date) async throws -> [GlucoseEffect] {
++        try await withCheckedThrowingContinuation { continuation in
++            // basalDosingEnd nil: stiamo guardando il passato, nessuna dose e' "in corso".
++            doseStore.getGlucoseEffects(start: start, end: end, basalDosingEnd: nil) { result in
++                switch result {
++                case .success(let effects): continuation.resume(returning: effects)
++                case .failure(let error): continuation.resume(throwing: error)
++                }
++            }
++        }
++    }
++
++    func carbsOnBoard(start: Date, end: Date, velocities: [GlucoseEffectVelocity]) async throws -> [CarbValue] {
++        try await withCheckedThrowingContinuation { continuation in
++            carbStore.getCarbsOnBoardValues(start: start, end: end, effectVelocities: velocities) { result in
++                switch result {
++                case .success(let values): continuation.resume(returning: values)
++                case .failure(let error): continuation.resume(throwing: error)
++                }
++            }
++        }
++    }
++
++    func carbGlucoseEffects(start: Date, end: Date, velocities: [GlucoseEffectVelocity]) async throws -> [GlucoseEffect] {
++        try await withCheckedThrowingContinuation { continuation in
++            carbStore.getGlucoseEffects(start: start, end: end, effectVelocities: velocities) { result in
++                switch result {
++                case .success(let value): continuation.resume(returning: value.effects)
++                case .failure(let error): continuation.resume(throwing: error)
++                }
++            }
++        }
++    }
++
++    func insulinOnBoardValues(start: Date, end: Date) async throws -> [InsulinValue] {
++        try await withCheckedThrowingContinuation { continuation in
++            doseStore.getInsulinOnBoardValues(start: start, end: end, basalDosingEnd: nil) { result in
++                switch result {
++                case .success(let values): continuation.resume(returning: values)
++                case .failure(let error): continuation.resume(throwing: error)
++                }
++            }
++        }
++    }
++}
++
++// MARK: - Pasti lunghi
++
++private extension AdaptiveTherapyManager {
++
++    /// Individua i pasti la cui durata di assorbimento osservata ha raggiunto il tetto che
++    /// il modello consente (tempo dichiarato x 1,5). Sono i casi in cui Loop avrebbe voluto
++    /// estendere ancora e non ha potuto: da li' in poi il modello non sa piu' niente, i
++    /// carboidrati attivi vanno a zero mentre il pasto sta ancora assorbendo, e la salita
++    /// residua verrebbe letta come "basale bassa".
++    func detectSaturatedMeals(entries: [StoredCarbEntry], carbEffects: [GlucoseEffect]) -> [AdaptiveMealObservation] {
++        var observations: [AdaptiveMealObservation] = []
++
++        // Velocita' dell'effetto carboidrati, per differenza sulla curva cumulativa.
++        let effectRates = rates(from: carbEffects)
++
++        let sorted = entries.sorted { $0.startDate < $1.startDate }
++        let tailThreshold = 3.0
++
++        for (index, entry) in sorted.enumerated() {
++            let declared = entry.absorptionTime ?? LoopCoreConstants.defaultCarbAbsorptionTimes.medium
++            let ceiling = declared * CarbMath.defaultAbsorptionTimeOverrun
++            let ceilingDate = entry.startDate.addingTimeInterval(ceiling)
++
++            // Se un pasto successivo sta ancora assorbendo nella stessa finestra, la coda
++            // che vediamo non e' necessariamente di questo pasto: la curva e' la somma di
++            // tutti. Senza questo controllo, con tre pasti al giorno praticamente ogni
++            // pasto verrebbe marcato come lungo, e le quarantene che ne derivano
++            // azzererebbero quasi tutti i bin.
++            let contaminated = sorted[(index + 1)...].contains { later in
++                let laterDeclared = later.absorptionTime ?? LoopCoreConstants.defaultCarbAbsorptionTimes.medium
++                let laterCeiling = later.startDate
++                    .addingTimeInterval(laterDeclared * CarbMath.defaultAbsorptionTimeOverrun)
++
++                return later.startDate < ceilingDate.addingTimeInterval(.hours(4))
++                    && laterCeiling > ceilingDate.addingTimeInterval(-.minutes(30))
++            }
++            guard !contaminated else { continue }
++
++            // L'effetto carboidrati e' ancora vivo alla scadenza del tetto?
++            let tailWindow = DateInterval(start: ceilingDate.addingTimeInterval(-.minutes(30)),
++                                          end: ceilingDate.addingTimeInterval(.minutes(30)))
++            let tailRates = effectRates.filter { tailWindow.contains($0.date) }
++            guard !tailRates.isEmpty else { continue }
++
++            let meanTailRate = tailRates.reduce(0) { $0 + $1.value } / Double(tailRates.count)
++
++            // Soglia bassa ma non nulla: sotto 3 mg/dL/h la coda e' rumore.
++            guard meanTailRate > tailThreshold else { continue }
++
++            // Fin dove arriva davvero: si cammina in avanti finche' la velocita' non
++            // scende sotto la soglia. Prima qui veniva scritto il tetto teorico, cioe' un
++            // numero che non era mai stato misurato, e il rapporto diceva sempre 1,5.
++            var observedEnd = ceilingDate
++            let searchLimit = ceilingDate.addingTimeInterval(.hours(4))
++            for sample in effectRates where sample.date > ceilingDate && sample.date <= searchLimit {
++                guard sample.value > tailThreshold else { break }
++                observedEnd = sample.date
++            }
++
++            observations.append(AdaptiveMealObservation(
++                startDate: entry.startDate,
++                grams: entry.quantity.doubleValue(for: .gram()),
++                declaredAbsorption: declared,
++                observedAbsorption: observedEnd.timeIntervalSince(entry.startDate)
++            ))
++        }
++
++        return observations
++    }
++
++    /// Da curva cumulativa a velocita' in mg/dL per ora.
++    func rates(from effects: [GlucoseEffect]) -> [(date: Date, value: Double)] {
++        guard effects.count > 1 else { return [] }
++
++        var result: [(date: Date, value: Double)] = []
++        for index in 1..<effects.count {
++            let previous = effects[index - 1]
++            let current = effects[index]
++            let seconds = current.startDate.timeIntervalSince(previous.startDate)
++            guard seconds > 0 else { continue }
++
++            let delta = current.quantity.doubleValue(for: .milligramsPerDeciliter)
++                - previous.quantity.doubleValue(for: .milligramsPerDeciliter)
++
++            result.append((date: current.startDate, value: delta / seconds * 3600))
++        }
++        return result
++    }
++}
++
++// MARK: - Binning e pesi
++
++private extension AdaptiveTherapyManager {
++
++    func buildBins(windowStart: Date,
++                   windowEnd: Date,
++                   glucose: [StoredGlucoseSample],
++                   counteraction: [GlucoseEffectVelocity],
++                   cobValues: [CarbValue],
++                   carbEffects: [GlucoseEffect],
++                   iobValues: [InsulinValue],
++                   saturatedMeals: [AdaptiveMealObservation],
++                   inputs: AdaptiveTherapyInputs) -> [AdaptiveBin]
++    {
++        let binDuration = configuration.binDuration
++        let binCount = Int(windowEnd.timeIntervalSince(windowStart) / binDuration)
++        guard binCount > 0 else { return [] }
++
++        let carbRates = rates(from: carbEffects)
++        let suspendThreshold = inputs.suspendThreshold?.doubleValue(for: .milligramsPerDeciliter)
++        let velocityUnit = HKUnit.milligramsPerDeciliterPerMinute
++
++        func index(for date: Date) -> Int? {
++            let offset = date.timeIntervalSince(windowStart) / binDuration
++            guard offset >= 0 else { return nil }
++            let index = Int(offset)
++            return index < binCount ? index : nil
++        }
++
++        // Un solo passaggio su ogni serie, invece di rifiltrare tutti gli array per ogni
++        // bin: su tre settimane di dati la differenza sono decine di milioni di confronti.
++        // Il bucketing e' semiaperto, quindi un campione esattamente sul confine non
++        // finisce contato in due bin adiacenti.
++        var iceBuckets = [[Double]](repeating: [], count: binCount)
++        var glucoseBuckets = [[Double]](repeating: [], count: binCount)
++        var cobBuckets = [[Double]](repeating: [], count: binCount)
++        var carbRateBuckets = [[Double]](repeating: [], count: binCount)
++        var iobBuckets = [[Double]](repeating: [], count: binCount)
++
++        for velocity in counteraction {
++            if let index = index(for: velocity.startDate) {
++                iceBuckets[index].append(velocity.quantity.doubleValue(for: velocityUnit) * 60)
++            }
++        }
++        for sample in glucose {
++            if let index = index(for: sample.startDate) {
++                glucoseBuckets[index].append(sample.quantity.doubleValue(for: .milligramsPerDeciliter))
++            }
++        }
++        for value in cobValues {
++            if let index = index(for: value.startDate) {
++                cobBuckets[index].append(value.value)
++            }
++        }
++        for sample in carbRates {
++            if let index = index(for: sample.date) {
++                carbRateBuckets[index].append(sample.value)
++            }
++        }
++        for value in iobValues {
++            if let index = index(for: value.startDate) {
++                iobBuckets[index].append(value.value)
++            }
++        }
++
++        // Finestre da tenere fuori del tutto per via di un pasto lungo: il peso non torna
++        // a 1 alla fine dichiarata, ma solo dopo l'assorbimento osservato piu' una coda.
++        let quarantines: [DateInterval] = saturatedMeals.map { meal in
++            DateInterval(start: meal.startDate,
++                         end: meal.startDate
++                            .addingTimeInterval(meal.observedAbsorption)
++                            .addingTimeInterval(configuration.absorptionSafetyTail))
++        }
++
++        var bins: [AdaptiveBin] = []
++        bins.reserveCapacity(binCount)
++
++        for index in 0..<binCount {
++            let binStart = windowStart.addingTimeInterval(Double(index) * binDuration)
++
++            // Un bin senza glicemie o senza ICE non dice niente.
++            guard !iceBuckets[index].isEmpty, !glucoseBuckets[index].isEmpty else {
++                bins.append(AdaptiveBin(startDate: binStart, counteractionPerHour: 0, carbsOnBoard: 0,
++                                        carbEffectPerHour: 0, insulinOnBoard: 0,
++                                        glucoseDeviationFromTarget: 0, weight: 0,
++                                        exclusions: [.glucoseGap]))
++                continue
++            }
++
++            let icePerHour = mean(iceBuckets[index])
++
++            // Stessa statistica dell'ICE. Confrontare un massimo con una media
++            // sovrastimerebbe sistematicamente la quota attribuita ai carboidrati,
++            // e quindi sottopeserebbe ogni bin.
++            let carbRate = mean(carbRateBuckets[index])
++
++            // Per i carboidrati attivi il massimo e' la scelta prudente: se in un punto
++            // qualsiasi del bin ce n'erano tanti, il bin non e' pulito.
++            let cob = cobBuckets[index].max() ?? 0
++
++            let iob = mean(iobBuckets[index])
++            let meanGlucose = mean(glucoseBuckets[index])
++
++            let targetRange = inputs.targetSchedule.quantityRange(at: binStart)
++            let targetCenter = (targetRange.lowerBound.doubleValue(for: .milligramsPerDeciliter)
++                                + targetRange.upperBound.doubleValue(for: .milligramsPerDeciliter)) / 2
++
++            var exclusions: [AdaptiveExclusionReason] = []
++
++            // Sotto la soglia di sospensione la dinamica e' dominata dalla sospensione,
++            // non dalla basale.
++            if let suspendThreshold = suspendThreshold, meanGlucose < suspendThreshold {
++                exclusions.append(.belowSuspendThreshold)
++            }
++
++            if quarantines.contains(where: { $0.contains(binStart) }) {
++                exclusions.append(.longMealSuspected)
++            }
++
++            let weight = binWeight(carbsOnBoard: cob,
++                                   carbRatePerHour: carbRate,
++                                   icePerHour: icePerHour,
++                                   exclusions: &exclusions)
++
++            bins.append(AdaptiveBin(startDate: binStart,
++                                    counteractionPerHour: icePerHour,
++                                    carbsOnBoard: cob,
++                                    carbEffectPerHour: carbRate,
++                                    insulinOnBoard: iob,
++                                    glucoseDeviationFromTarget: meanGlucose - targetCenter,
++                                    weight: weight,
++                                    exclusions: exclusions))
++        }
++
++        return bins
++    }
++
++    func mean(_ values: [Double]) -> Double {
++        guard !values.isEmpty else { return 0 }
++        return values.reduce(0, +) / Double(values.count)
++    }
++
++    /// Peso continuo fra 0 e 1: nessun bin viene buttato, ognuno conta in proporzione a
++    /// quanto e' leggibile. Il termine principale non e' sui grammi ma su quanta parte del
++    /// movimento della glicemia il modello attribuisce ai carboidrati: otto grammi nella
++    /// coda lenta disturbano molto meno di otto grammi al picco di assorbimento.
++    func binWeight(carbsOnBoard: Double,
++                   carbRatePerHour: Double,
++                   icePerHour: Double,
++                   exclusions: inout [AdaptiveExclusionReason]) -> Double
++    {
++        // Pavimento rigido: sopra questa quantita' la stima di assorbimento non e'
++        // affidabile abbastanza da meritare un voto anche piccolo.
++        if carbsOnBoard > configuration.hardCarbCutoffGrams {
++            exclusions.append(.activeCarbs)
++            return 0
++        }
++
++        if exclusions.contains(.belowSuspendThreshold) || exclusions.contains(.longMealSuspected) {
++            return 0
++        }
++
++        // Campana sui grammi residui.
++        let half = max(configuration.carbHalfWeightGrams, 0.1)
++        let gramsTerm = 1 / (1 + pow(carbsOnBoard / half, 2))
++
++        // Quota del movimento attribuita ai carboidrati rispetto al totale osservato.
++        // Il denominatore ha un pavimento: senza, due numeri entrambi trascurabili
++        // (0,4 contro 0,4 mg/dL/h in piena notte) dimezzerebbero il peso di un bin
++        // che invece e' esattamente quello che ci serve.
++        let totalMovement = max(abs(carbRatePerHour) + abs(icePerHour),
++                                configuration.movementNoiseFloorPerHour)
++        let carbShare = min(abs(carbRatePerHour) / totalMovement, 1)
++        let shareTerm = 1 - carbShare
++
++        var weight = gramsTerm * shareTerm
++
++        // Penalizzazione asimmetrica. I carboidrati residui spingono la glicemia in alto:
++        // un COB sottostimato somiglia a "manca insulina", e la correzione che ne
++        // deriverebbe e' quella pericolosa. A parita' di carboidrati attivi siamo quindi
++        // piu' severi quando l'ICE e' positivo.
++        if icePerHour > 0 && carbsOnBoard > 0 {
++            weight = pow(weight, configuration.asymmetricPenaltyExponent)
++        }
++
++        if weight < 0.2 && carbsOnBoard > 0 {
++            exclusions.append(.activeCarbs)
++        }
++
++        return max(0, min(1, weight))
++    }
++}
++
++// MARK: - Deconvoluzione
++
++private extension AdaptiveTherapyManager {
++
++    /// Curva di attivita' insulinica (modello esponenziale, stessa forma usata da LoopKit).
++    /// TODO: leggerla dal modello insulinico effettivamente configurato invece che dai
++    /// parametri in AdaptiveTherapyConfiguration.
++    func insulinActivity(at time: TimeInterval) -> Double {
++        let td = configuration.insulinActivityDuration
++        let tp = configuration.insulinPeakActivity
++
++        guard time > 0, time < td, tp > 0, td > tp, abs(1 - 2 * tp / td) > 1e-6 else {
++            return 0
++        }
++
++        let tau = tp * (1 - tp / td) / (1 - 2 * tp / td)
++        let a = 2 * tau / td
++        let s = 1 / (1 - a + (1 + a) * exp(-td / tau))
++
++        return (s / (tau * tau)) * time * (1 - time / td) * exp(-time / tau)
++    }
++
++    /// Riporta indietro la deviazione osservata sui bin che l'hanno generata.
++    ///
++    /// E' la differenza sostanziale rispetto ad autotune. La glicemia che sale alle 4 non
++    /// dipende dalla basale delle 4 ma da quella dell'una o delle due: attribuire la
++    /// deviazione all'ora in cui la si vede sposta sistematicamente in avanti tutte le
++    /// correzioni, e con code insuliniche di 4-6 ore lo spostamento non e' piccolo.
++    func deconvolve(_ bins: [AdaptiveBin]) -> [AdaptiveBin] {
++        guard !bins.isEmpty else { return [] }
++
++        let binSeconds = configuration.binDuration
++        let lag = max(1, Int((configuration.insulinActivityDuration / binSeconds).rounded()))
++
++        var kernel: [Double] = []
++        for step in 0...lag {
++            let time = Double(step) * binSeconds + binSeconds / 2
++            kernel.append(insulinActivity(at: time))
++        }
++
++        let kernelSum = kernel.reduce(0, +)
++        guard kernelSum > 0 else { return bins }
++        let normalized = kernel.map { $0 / kernelSum }
++
++        var numerator = [Double](repeating: 0, count: bins.count)
++        var denominator = [Double](repeating: 0, count: bins.count)
++
++        for index in bins.indices {
++            let bin = bins[index]
++            guard bin.weight > 0 else { continue }
++
++            for step in 0...lag {
++                let target = index - step
++                guard target >= 0 else { break }
++
++                let contribution = normalized[step] * bin.weight
++                numerator[target] += bin.counteractionPerHour * contribution
++                denominator[target] += contribution
++            }
++        }
++
++        return bins.indices.map { index in
++            let bin = bins[index]
++            let weight = denominator[index]
++            let value = weight > 0 ? numerator[index] / weight : 0
++
++            return AdaptiveBin(startDate: bin.startDate,
++                               counteractionPerHour: value,
++                               carbsOnBoard: bin.carbsOnBoard,
++                               carbEffectPerHour: bin.carbEffectPerHour,
++                               insulinOnBoard: bin.insulinOnBoard,
++                               glucoseDeviationFromTarget: bin.glucoseDeviationFromTarget,
++                               weight: min(1, weight),
++                               exclusions: bin.exclusions)
++        }
++    }
++}
++
++// MARK: - Stima per fascia
++
++private extension AdaptiveTherapyManager {
++
++    func estimateSlots(from bins: [AdaptiveBin], inputs: AdaptiveTherapyInputs) -> [AdaptiveSlotRecommendation] {
++        let calendar = Calendar.current
++        let binMinutes = Int(configuration.binDuration / 60)
++        guard binMinutes > 0 else { return [] }
++
++        var grouped: [Int: [AdaptiveBin]] = [:]
++        for bin in bins {
++            let components = calendar.dateComponents([.hour, .minute], from: bin.startDate)
++            let minutes = (components.hour ?? 0) * 60 + (components.minute ?? 0)
++            let slot = (minutes / binMinutes) * binMinutes
++            grouped[slot, default: []].append(bin)
++        }
++
++        let referenceMidnight = calendar.startOfDay(for: Date())
++        var results: [AdaptiveSlotRecommendation] = []
++
++        for slot in stride(from: 0, to: 24 * 60, by: binMinutes) {
++            let slotDate = referenceMidnight.addingTimeInterval(TimeInterval(slot * 60))
++            let slotBins = (grouped[slot] ?? []).filter { $0.weight > 0 }
++
++            let isf = inputs.insulinSensitivitySchedule
++                .quantity(at: slotDate)
++                .doubleValue(for: .milligramsPerDeciliter)
++            let scheduledBasal = inputs.basalSchedule.value(at: slotDate)
++
++            guard !slotBins.isEmpty, isf > 0, scheduledBasal > 0 else {
++                results.append(neutralSlot(slot, notes: ["nessun dato utilizzabile in questa fascia"]))
++                continue
++            }
++
++            let weights = slotBins.map { $0.weight }
++            let sumWeights = weights.reduce(0, +)
++            let sumSquaredWeights = weights.reduce(0) { $0 + $1 * $1 }
++
++            // Numerosita' efficace (Kish): con pesi tutti pari a 1 coincide con il conteggio,
++            // con pesi molto disuguali e' molto piu' bassa. E' piu' onesta di un conteggio secco.
++            let effectiveSamples = sumSquaredWeights > 0 ? (sumWeights * sumWeights) / sumSquaredWeights : 0
++
++            let values = slotBins.map { $0.counteractionPerHour }
++            let center = weightedMedian(values: values, weights: weights)
++            let dispersion = weightedMedian(values: values.map { abs($0 - center) }, weights: weights)
++
++            guard effectiveSamples >= configuration.minimumEffectiveSamples else {
++                results.append(neutralSlot(slot,
++                                           effectiveSamples: effectiveSamples,
++                                           dispersion: dispersion,
++                                           notes: [String(format: "campione efficace %.1f, sotto la soglia di %.0f",
++                                                          effectiveSamples, configuration.minimumEffectiveSamples)]))
++                continue
++            }
++
++            guard dispersion <= configuration.maximumDispersion else {
++                results.append(neutralSlot(slot,
++                                           effectiveSamples: effectiveSamples,
++                                           dispersion: dispersion,
++                                           notes: [String(format: "dispersione %.1f mg/dL/h: segnale non riproducibile", dispersion)]))
++                continue
++            }
++
++            // Scarto degli outlier: oltre 3 MAD dal centro robusto.
++            let threshold = max(3 * dispersion, 5.0)
++            let kept = slotBins.filter { abs($0.counteractionPerHour - center) <= threshold }
++            guard kept.count >= 3 else {
++                results.append(neutralSlot(slot,
++                                           effectiveSamples: effectiveSamples,
++                                           dispersion: dispersion,
++                                           notes: ["troppi valori anomali nella fascia"]))
++                continue
++            }
++
++            // Regressione pesata a due regressori.
++            // Costante -> errore di basale: sbaglia sempre allo stesso modo.
++            // (deviazione dal target x insulina attiva) -> errore di ISF: si vede solo
++            // quando c'e' una correzione in corso.
++            let regression = weightedRegression(
++                points: kept.map { (x: $0.glucoseDeviationFromTarget * $0.insulinOnBoard,
++                                    y: $0.counteractionPerHour,
++                                    w: $0.weight) }
++            )
++
++            // mg/dL/h diviso mg/dL per unita' = unita'/ora mancanti o in eccesso.
++            let basalDelta = regression.intercept / isf
++            var basalMultiplier = (scheduledBasal + basalDelta) / scheduledBasal
++
++            // Errore relativo di ISF. Approssimazione: l'insulina di correzione attiva
++            // produce, nell'arco della sua durata, circa IOB x ISF; il residuo per ora
++            // attribuito alla pendenza vale beta1 x deviazione tipica.
++            let meanAbsDeviation = kept.reduce(0.0) { $0 + abs($1.glucoseDeviationFromTarget) } / Double(kept.count)
++            let hours = configuration.insulinActivityDuration / 3600
++            let relativeIsfError = regression.slope * meanAbsDeviation * hours / isf
++            var isfMultiplier = 1 - relativeIsfError
++
++            // La Integral Retrospective Correction e' gia' un adattamento a tre ore:
++            // sommare i due guadagni fa oscillare l'anello.
++            if inputs.integralRetrospectiveCorrectionEnabled {
++                let attenuation = configuration.integralRetrospectiveCorrectionAttenuation
++                basalMultiplier = 1 + (basalMultiplier - 1) * attenuation
++                isfMultiplier = 1 + (isfMultiplier - 1) * attenuation
++            }
++
++            results.append(AdaptiveSlotRecommendation(
++                slotStartMinutes: slot,
++                basalMultiplier: clampMultiplier(basalMultiplier),
++                insulinSensitivityMultiplier: clampMultiplier(isfMultiplier),
++                effectiveSamples: effectiveSamples,
++                dispersion: dispersion,
++                isActionable: true,
++                notes: []
++            ))
++        }
++
++        return results
++    }
++
++    func neutralSlot(_ slot: Int,
++                     effectiveSamples: Double = 0,
++                     dispersion: Double = 0,
++                     notes: [String]) -> AdaptiveSlotRecommendation
++    {
++        AdaptiveSlotRecommendation(slotStartMinutes: slot,
++                                   basalMultiplier: 1,
++                                   insulinSensitivityMultiplier: 1,
++                                   effectiveSamples: effectiveSamples,
++                                   dispersion: dispersion,
++                                   isActionable: false,
++                                   notes: notes)
++    }
++
++    func clampMultiplier(_ value: Double) -> Double {
++        guard value.isFinite else { return 1 }
++        return min(max(value, configuration.minimumMultiplier), configuration.maximumMultiplier)
++    }
++
++    func weightedMedian(values: [Double], weights: [Double]) -> Double {
++        guard !values.isEmpty, values.count == weights.count else { return 0 }
++
++        let pairs = zip(values, weights).sorted { $0.0 < $1.0 }
++        let total = weights.reduce(0, +)
++        guard total > 0 else { return 0 }
++
++        var running = 0.0
++        for (value, weight) in pairs {
++            running += weight
++            if running >= total / 2 {
++                return value
++            }
++        }
++        return pairs.last?.0 ?? 0
++    }
++
++    func weightedRegression(points: [(x: Double, y: Double, w: Double)]) -> (intercept: Double, slope: Double) {
++        var sumW = 0.0, sumX = 0.0, sumY = 0.0, sumXX = 0.0, sumXY = 0.0
++
++        for point in points {
++            sumW += point.w
++            sumX += point.w * point.x
++            sumY += point.w * point.y
++            sumXX += point.w * point.x * point.x
++            sumXY += point.w * point.x * point.y
++        }
++
++        guard sumW > 0 else { return (0, 0) }
++
++        let denominator = sumW * sumXX - sumX * sumX
++
++        // Senza abbastanza variazione sul regressore ISF si stima solo la costante:
++        // e' il caso dei bin con insulina di correzione praticamente nulla, che infatti
++        // informano soltanto la basale.
++        guard abs(denominator) > 1e-9 else {
++            return (sumY / sumW, 0)
++        }
++
++        let slope = (sumW * sumXY - sumX * sumY) / denominator
++        let intercept = (sumY - slope * sumX) / sumW
++
++        return (intercept, slope)
++    }
++}
++
++// MARK: - Continuita' e gradualita'
++
++private extension AdaptiveTherapyManager {
++
++    /// Le fasce non sono indipendenti: la coda dell'insulina le lega, quindi un profilo a
++    /// denti di sega e' quasi sempre un artefatto. Media mobile circolare a tre punti.
++    func smooth(_ slots: [AdaptiveSlotRecommendation]) -> [AdaptiveSlotRecommendation] {
++        guard slots.count > 2 else { return slots }
++
++        return slots.indices.map { index in
++            let slot = slots[index]
++            guard slot.isActionable else { return slot }
++
++            let previous = slots[(index - 1 + slots.count) % slots.count]
++            let next = slots[(index + 1) % slots.count]
++
++            let basal = 0.25 * previous.basalMultiplier + 0.5 * slot.basalMultiplier + 0.25 * next.basalMultiplier
++            let isf = 0.25 * previous.insulinSensitivityMultiplier
++                + 0.5 * slot.insulinSensitivityMultiplier
++                + 0.25 * next.insulinSensitivityMultiplier
++
++            return AdaptiveSlotRecommendation(slotStartMinutes: slot.slotStartMinutes,
++                                              basalMultiplier: clampMultiplier(basal),
++                                              insulinSensitivityMultiplier: clampMultiplier(isf),
++                                              effectiveSamples: slot.effectiveSamples,
++                                              dispersion: slot.dispersion,
++                                              isActionable: true,
++                                              notes: slot.notes)
++        }
++    }
++
++    /// Mai sostituzione: si parte dallo stato precedente e ci si muove al massimo di un
++    /// passo. Un motore che insegue il rumore e' peggio di nessun motore.
++    func applyGradualUpdate(_ slots: [AdaptiveSlotRecommendation]) -> [AdaptiveSlotRecommendation] {
++        var basalState = storedMultipliers
++        var isfState = storedIsfMultipliers
++        let maxStep = configuration.maximumStepPerUpdate
++
++        func step(from previous: Double, to target: Double) -> Double {
++            previous + min(max(target - previous, -maxStep), maxStep)
++        }
++
++        let updated = slots.map { slot -> AdaptiveSlotRecommendation in
++            guard slot.isActionable else { return slot }
++
++            let basal = step(from: basalState[slot.slotStartMinutes] ?? 1.0, to: slot.basalMultiplier)
++            let isf = step(from: isfState[slot.slotStartMinutes] ?? 1.0, to: slot.insulinSensitivityMultiplier)
++
++            basalState[slot.slotStartMinutes] = basal
++            isfState[slot.slotStartMinutes] = isf
++
++            return AdaptiveSlotRecommendation(slotStartMinutes: slot.slotStartMinutes,
++                                              basalMultiplier: clampMultiplier(basal),
++                                              insulinSensitivityMultiplier: clampMultiplier(isf),
++                                              effectiveSamples: slot.effectiveSamples,
++                                              dispersion: slot.dispersion,
++                                              isActionable: true,
++                                              notes: slot.notes)
++        }
++
++        storedMultipliers = basalState
++        storedIsfMultipliers = isfState
++        return updated
++    }
++}
+diff --git a/Loop/Loop/Managers/AdaptiveTherapyModels.swift b/Loop/Loop/Managers/AdaptiveTherapyModels.swift
+new file mode 100644
+index 00000000..14fe0e2b
+--- /dev/null
++++ b/Loop/Loop/Managers/AdaptiveTherapyModels.swift
+@@ -0,0 +1,198 @@
++//
++//  AdaptiveTherapyModels.swift
++//  Loop
++//
++//  Tipi di supporto del motore adattivo retrospettivo.
++//  Vedi AdaptiveTherapyManager.swift per l'algoritmo.
++//
++
++import Foundation
++import HealthKit
++import LoopKit
++
++// MARK: - Configurazione
++
++/// Parametri del motore adattivo. Valori conservativi per default: il motore nasce in
++/// sola osservazione e non deve mai essere l'elemento che decide quanto e' aggressivo Loop.
++struct AdaptiveTherapyConfiguration: Codable, Equatable {
++
++    /// Giorni di storico da esaminare. Lo store locale e' configurato a 21 giorni
++    /// (LOOP_LOCAL_CACHE_DURATION_DAYS in LoopConfigOverride.xcconfig).
++    var analysisWindowDays: Int = 21
++
++    /// Ampiezza del bin. 30 minuti si allinea alle fasce del profilo basale.
++    var binDuration: TimeInterval = .minutes(30)
++
++    /// Limiti dell'adattamento. Sono un vincolo *sopra* ai Guardrail di LoopKit, non al
++    /// posto loro: qualunque moltiplicatore viene comunque riverificato contro quelli.
++    var minimumMultiplier: Double = 0.85
++    var maximumMultiplier: Double = 1.15
++
++    /// Passo massimo per singolo aggiornamento. Un motore che insegue il rumore e' peggio
++    /// di nessun motore.
++    var maximumStepPerUpdate: Double = 0.05
++
++    /// Intervallo minimo fra due aggiornamenti dei moltiplicatori.
++    var minimumUpdateInterval: TimeInterval = .hours(12)
++
++    /// Frazione minima dei giorni della finestra che deve contribuire a una fascia.
++    /// Una fascia riceve al massimo un bin per giorno, quindi la soglia va rapportata al
++    /// numero di giorni: un valore assoluto alto rende semplicemente impossibile che una
++    /// qualunque fascia diventi utilizzabile, e il motore non produce mai niente.
++    var minimumEffectiveSampleFraction: Double = 0.3
++    var minimumEffectiveSampleFloor: Double = 4
++
++    /// Numero efficace minimo di osservazioni per fascia (numerosita' di Kish).
++    var minimumEffectiveSamples: Double {
++        max(minimumEffectiveSampleFloor, Double(analysisWindowDays) * minimumEffectiveSampleFraction)
++    }
++
++    /// Ampiezza sotto la quale il movimento della glicemia e' rumore. Senza questo
++    /// pavimento un bin notturno pulitissimo con 0,4 contro 0,4 mg/dL/h si vedrebbe
++    /// dimezzare il peso da due numeri che non significano niente.
++    var movementNoiseFloorPerHour: Double = 5
++
++    /// Dispersione massima tollerata (MAD, in mg/dL per ora) oltre la quale il segnale
++    /// e' considerato non riproducibile e la fascia resta a 1,0.
++    var maximumDispersion: Double = 18
++
++    /// Carboidrati attivi oltre i quali il bin non vale nulla, in grammi. Nella fascia
++    /// peggiore la stima di assorbimento non e' affidabile abbastanza per meritare un
++    /// voto anche piccolo.
++    var hardCarbCutoffGrams: Double = 25
++
++    /// Grammi a cui il peso vale 0,5. Governa la pendenza della campana.
++    var carbHalfWeightGrams: Double = 8
++
++    /// Severita' aggiuntiva applicata quando la correzione che ne deriverebbe *aumenta*
++    /// l'insulina. I carboidrati residui spingono la glicemia verso l'alto, quindi un COB
++    /// sottostimato somiglia a "manca insulina": l'errore andrebbe dalla parte pericolosa.
++    var asymmetricPenaltyExponent: Double = 2.0
++
++    /// Coda di sicurezza dopo la fine dell'assorbimento osservato, prima che il peso
++    /// possa tornare a 1.
++    var absorptionSafetyTail: TimeInterval = .minutes(60)
++
++    /// Attenuazione applicata quando la Integral Retrospective Correction e' attiva.
++    /// L'IRC e' gia' un adattamento a 3 ore: sommare i due guadagni fa oscillare l'anello.
++    var integralRetrospectiveCorrectionAttenuation: Double = 0.5
++
++    /// Modello di attivita' insulinica usato per la deconvoluzione.
++    /// TODO: sostituire con la curva del modello insulinico effettivamente configurato.
++    var insulinPeakActivity: TimeInterval = .minutes(75)
++    var insulinActivityDuration: TimeInterval = .hours(6)
++
++    static let `default` = AdaptiveTherapyConfiguration()
++}
++
++// MARK: - Campioni
++
++/// Motivo per cui un bin vale poco o niente. Registrato perche' in fase di osservazione
++/// la domanda utile non e' "quanto propone" ma "perche' ha scartato quello che ha scartato".
++enum AdaptiveExclusionReason: String, Codable, CaseIterable {
++    case activeCarbs = "carboidrati attivi"
++    case longMealSuspected = "pasto lungo sospetto"
++    case manualBolus = "bolo manuale recente"
++    case overrideActive = "override attivo"
++    case glucoseGap = "buco nei dati CGM"
++    case belowSuspendThreshold = "sotto la soglia di sospensione"
++    case podChange = "cambio pod recente"
++    case insufficientData = "dati insufficienti"
++}
++
++/// Un intervallo elementare di analisi.
++struct AdaptiveBin: Codable {
++    let startDate: Date
++
++    /// Deviazione osservata, in mg/dL per ora. E' l'insulin counteraction effect:
++    /// variazione di glicemia osservata meno quella attribuibile all'insulina.
++    let counteractionPerHour: Double
++
++    /// Carboidrati ancora in assorbimento, in grammi.
++    let carbsOnBoard: Double
++
++    /// Quota del movimento di glicemia attribuita ai carboidrati, in mg/dL per ora.
++    let carbEffectPerHour: Double
++
++    /// Insulina attiva, in unita'. Usata come regressore per separare ISF da basale.
++    let insulinOnBoard: Double
++
++    /// Distanza dal centro del target, in mg/dL.
++    let glucoseDeviationFromTarget: Double
++
++    /// Peso finale del bin, fra 0 e 1.
++    let weight: Double
++
++    /// Motivi che hanno abbassato il peso.
++    let exclusions: [AdaptiveExclusionReason]
++}
++
++// MARK: - Risultato
++
++/// Raccomandazione per una singola fascia oraria.
++struct AdaptiveSlotRecommendation: Codable, Identifiable {
++    /// Minuti dalla mezzanotte a cui inizia la fascia.
++    let slotStartMinutes: Int
++
++    let basalMultiplier: Double
++    let insulinSensitivityMultiplier: Double
++
++    /// Somma dei pesi, corretta per la loro dispersione. E' la vera numerosita' del campione.
++    let effectiveSamples: Double
++
++    /// Dispersione (MAD) della deviazione, in mg/dL per ora.
++    let dispersion: Double
++
++    /// Falso quando la fascia non ha prodotto una raccomandazione utilizzabile.
++    let isActionable: Bool
++
++    let notes: [String]
++
++    var id: Int { slotStartMinutes }
++
++    var slotLabel: String {
++        String(format: "%02d:%02d", slotStartMinutes / 60, slotStartMinutes % 60)
++    }
++}
++
++/// Esito completo di un'analisi. Persistito cosi' com'e' per la schermata di osservazione.
++struct AdaptiveTherapyReport: Codable {
++    let generatedAt: Date
++    let windowStart: Date
++    let windowEnd: Date
++
++    let slots: [AdaptiveSlotRecommendation]
++
++    /// Quante ore di storico sono state esaminate e quante sono risultate leggibili.
++    let totalBins: Int
++    let effectiveBins: Double
++
++    /// Conteggio dei motivi di esclusione, per capire cosa sta mangiando i dati.
++    let exclusionCounts: [String: Int]
++
++    /// Pasti la cui durata osservata ha saturato il tetto del modello: sono i candidati
++    /// al suggerimento "dichiara questi pasti come lenti".
++    let saturatedMeals: [AdaptiveMealObservation]
++
++    /// Vero quando il motore non ha potuto concludere nulla, con il motivo.
++    let inconclusiveReason: String?
++
++    var actionableSlots: [AdaptiveSlotRecommendation] {
++        slots.filter { $0.isActionable }
++    }
++}
++
++/// Un pasto il cui assorbimento osservato ha toccato il tetto consentito dal modello.
++struct AdaptiveMealObservation: Codable, Identifiable {
++    let startDate: Date
++    let grams: Double
++    let declaredAbsorption: TimeInterval
++    let observedAbsorption: TimeInterval
++
++    var id: Date { startDate }
++
++    var ratio: Double {
++        guard declaredAbsorption > 0 else { return 1 }
++        return observedAbsorption / declaredAbsorption
++    }
++}
+diff --git a/Loop/Loop/Managers/LoopDataManager.swift b/Loop/Loop/Managers/LoopDataManager.swift
+index c9aef285..f326d717 100644
+--- a/Loop/Loop/Managers/LoopDataManager.swift
++++ b/Loop/Loop/Managers/LoopDataManager.swift
+@@ -41,6 +41,42 @@ final class LoopDataManager {
+ 
+     private let glucoseStore: GlucoseStoreProtocol
+ 
++    /// Motore adattivo retrospettivo, in sola osservazione: analizza i giorni precedenti e
++    /// registra cosa AVREBBE proposto per basale e ISF fascia per fascia. Non entra in
++    /// nessun punto del calcolo della dose e non scrive le therapy settings.
++    /// Il cast ai tipi concreti serve perche' i protocolli ridotti usati qui non espongono
++    /// le query storiche; e' lo stesso schema gia' usato per l'export degli eventi critici.
++    private lazy var adaptiveTherapyManager: AdaptiveTherapyManager? = {
++        guard let glucoseStore = glucoseStore as? GlucoseStore,
++              let carbStore = carbStore as? CarbStore,
++              let doseStore = doseStore as? DoseStore
++        else {
++            return nil
++        }
++
++        return AdaptiveTherapyManager(
++            glucoseStore: glucoseStore,
++            carbStore: carbStore,
++            doseStore: doseStore
++        ) { [weak self] in
++            guard let self = self,
++                  let basalSchedule = self.basalRateScheduleApplyingOverrideHistory,
++                  let sensitivitySchedule = self.insulinSensitivityScheduleApplyingOverrideHistory,
++                  let targetSchedule = self.settings.glucoseTargetRangeSchedule
++            else {
++                return nil
++            }
++
++            return AdaptiveTherapyInputs(
++                basalSchedule: basalSchedule,
++                insulinSensitivitySchedule: sensitivitySchedule,
++                targetSchedule: targetSchedule,
++                suspendThreshold: self.settings.suspendThreshold?.quantity,
++                integralRetrospectiveCorrectionEnabled: UserDefaults.standard.integralRetrospectiveCorrectionEnabled
++            )
++        }
++    }()
++
+     let latestStoredSettingsProvider: LatestStoredSettingsProvider
+ 
+     weak var delegate: LoopDataManagerDelegate?
+@@ -908,6 +944,10 @@ extension LoopDataManager {
+         logger.default("Loop ended")
+         notify(forChange: .loopFinished)
+ 
++        // Sola osservazione: calcola e registra, non modifica nulla della terapia.
++        // Si autolimita da solo, non gira a ogni ciclo.
++        adaptiveTherapyManager?.analyzeIfNeeded()
++
+         if FeatureFlags.missedMealNotifications {
+             let samplesStart = now().addingTimeInterval(-MissedMealSettings.maxRecency)
+             carbStore.getGlucoseEffects(start: samplesStart, end: now(), effectVelocities: insulinCounteractionEffects) {[weak self] result in
+diff --git a/Loop/Loop/Views/AdaptiveTherapyView.swift b/Loop/Loop/Views/AdaptiveTherapyView.swift
+new file mode 100644
+index 00000000..fbba710d
+--- /dev/null
++++ b/Loop/Loop/Views/AdaptiveTherapyView.swift
+@@ -0,0 +1,177 @@
++//
++//  AdaptiveTherapyView.swift
++//  Loop
++//
++//  Schermata di osservazione del motore adattivo. Mostra cosa il motore AVREBBE
++//  proposto: in questa fase non modifica nulla della terapia.
++//
++
++import SwiftUI
++import LoopKit
++
++public struct AdaptiveTherapyView: View {
++
++    @Binding private var isAdaptiveTherapyEnabled: Bool
++    @State private var report: AdaptiveTherapyReport?
++
++    public init(isAdaptiveTherapyEnabled: Binding<Bool>) {
++        self._isAdaptiveTherapyEnabled = isAdaptiveTherapyEnabled
++    }
++
++    public var body: some View {
++        List {
++            Section {
++                Toggle(NSLocalizedString("Adaptive Therapy", comment: "Title of the adaptive therapy toggle"),
++                       isOn: $isAdaptiveTherapyEnabled)
++            } footer: {
++                Text(NSLocalizedString("Observation only. The engine analyses the previous days and records what it would have proposed. It does not change basal rates, insulin sensitivity or any dose.", comment: "Footer explaining that adaptive therapy is observation only"))
++            }
++
++            if let report = report {
++                summarySection(report)
++                slotsSection(report)
++                exclusionsSection(report)
++                mealsSection(report)
++            } else {
++                Section {
++                    Text(NSLocalizedString("No analysis yet. The first report appears after the engine has run, which happens at the end of a loop cycle once enough history is available.", comment: "Placeholder when no adaptive therapy report exists"))
++                        .foregroundColor(.secondary)
++                }
++            }
++        }
++        .navigationTitle(NSLocalizedString("Adaptive Therapy", comment: "Navigation title of the adaptive therapy screen"))
++        .navigationBarTitleDisplayMode(.inline)
++        .onAppear {
++            report = AdaptiveTherapyManager.storedReport
++        }
++    }
++
++    // MARK: - Sezioni
++
++    private func summarySection(_ report: AdaptiveTherapyReport) -> some View {
++        Section(NSLocalizedString("Last analysis", comment: "Section header for the adaptive therapy summary")) {
++            row(NSLocalizedString("Generated", comment: "Label"), Self.dateFormatter.string(from: report.generatedAt))
++            row(NSLocalizedString("Window", comment: "Label"),
++                "\(Self.dayFormatter.string(from: report.windowStart)) – \(Self.dayFormatter.string(from: report.windowEnd))")
++            row(NSLocalizedString("Readable intervals", comment: "Label"),
++                String(format: "%.0f / %d", report.effectiveBins, report.totalBins))
++            row(NSLocalizedString("Usable time slots", comment: "Label"),
++                "\(report.actionableSlots.count) / \(report.slots.count)")
++
++            if let reason = report.inconclusiveReason {
++                Text(reason)
++                    .font(.footnote)
++                    .foregroundColor(.secondary)
++            }
++        }
++    }
++
++    private func slotsSection(_ report: AdaptiveTherapyReport) -> some View {
++        Section(NSLocalizedString("What it would have proposed", comment: "Section header for the per-slot proposals")) {
++            if report.actionableSlots.isEmpty {
++                Text(NSLocalizedString("No time slot had enough clean data.", comment: "Placeholder when no slot is actionable"))
++                    .foregroundColor(.secondary)
++            } else {
++                ForEach(report.actionableSlots) { slot in
++                    VStack(alignment: .leading, spacing: 4) {
++                        HStack {
++                            Text(slot.slotLabel)
++                                .font(.body.monospacedDigit())
++                            Spacer()
++                            Text(Self.percentString(slot.basalMultiplier))
++                                .foregroundColor(Self.color(for: slot.basalMultiplier))
++                                .font(.body.monospacedDigit())
++                        }
++                        Text(String(format: NSLocalizedString("sensitivity %@ · sample %.1f · spread %.0f mg/dL/h", comment: "Detail line under a slot proposal"),
++                                    Self.percentString(slot.insulinSensitivityMultiplier),
++                                    slot.effectiveSamples,
++                                    slot.dispersion))
++                            .font(.caption)
++                            .foregroundColor(.secondary)
++                    }
++                    .padding(.vertical, 2)
++                }
++            }
++        }
++    }
++
++    private func exclusionsSection(_ report: AdaptiveTherapyReport) -> some View {
++        Section {
++            if report.exclusionCounts.isEmpty {
++                Text(NSLocalizedString("Nothing was excluded.", comment: "Placeholder when no exclusions"))
++                    .foregroundColor(.secondary)
++            } else {
++                let ordered = report.exclusionCounts.sorted { $0.value > $1.value }.map { $0.key }
++                ForEach(ordered, id: \.self) { key in
++                    row(key, "\(report.exclusionCounts[key] ?? 0)")
++                }
++            }
++        } header: {
++            Text(NSLocalizedString("Why intervals were discarded", comment: "Section header for exclusion counts"))
++        } footer: {
++            Text(NSLocalizedString("On a normal day only a small part of the 24 hours is readable, usually the night. This is expected: everything else is moving because of food, not because of the therapy.", comment: "Footer explaining exclusions"))
++        }
++    }
++
++    private func mealsSection(_ report: AdaptiveTherapyReport) -> some View {
++        Section {
++            if report.saturatedMeals.isEmpty {
++                Text(NSLocalizedString("None found.", comment: "Placeholder when no long meals detected"))
++                    .foregroundColor(.secondary)
++            } else {
++                ForEach(Array(report.saturatedMeals.prefix(20).enumerated()), id: \.offset) { _, meal in
++                    VStack(alignment: .leading, spacing: 2) {
++                        Text(Self.dateFormatter.string(from: meal.startDate))
++                            .font(.body.monospacedDigit())
++                        Text(String(format: NSLocalizedString("%.0f g · declared %.1f h, still absorbing at %.1f h", comment: "Detail line for a long meal"),
++                                    meal.grams,
++                                    meal.declaredAbsorption / 3600,
++                                    meal.observedAbsorption / 3600))
++                            .font(.caption)
++                            .foregroundColor(.secondary)
++                    }
++                    .padding(.vertical, 2)
++                }
++            }
++        } header: {
++            Text(NSLocalizedString("Meals that absorbed longer than declared", comment: "Section header for long meals"))
++        } footer: {
++            Text(NSLocalizedString("These meals hit the ceiling of the absorption model, which is one and a half times the time you entered. Past that point the model reports no carbs on board while the meal is still absorbing, and the rise that follows looks like a low basal rate. Entering these meals with a longer absorption time raises the ceiling.", comment: "Footer explaining long meals"))
++        }
++    }
++
++    private func row(_ label: String, _ value: String) -> some View {
++        HStack {
++            Text(label)
++            Spacer()
++            Text(value)
++                .foregroundColor(.secondary)
++                .font(.body.monospacedDigit())
++        }
++    }
++
++    // MARK: - Formattazione
++
++    private static func percentString(_ multiplier: Double) -> String {
++        let percent = (multiplier - 1) * 100
++        return String(format: "%+.1f%%", percent)
++    }
++
++    private static func color(for multiplier: Double) -> Color {
++        abs(multiplier - 1) < 0.02 ? .secondary : .accentColor
++    }
++
++    private static let dateFormatter: DateFormatter = {
++        let formatter = DateFormatter()
++        formatter.dateStyle = .short
++        formatter.timeStyle = .short
++        return formatter
++    }()
++
++    private static let dayFormatter: DateFormatter = {
++        let formatter = DateFormatter()
++        formatter.dateStyle = .short
++        formatter.timeStyle = .none
++        return formatter
++    }()
++}
+diff --git a/Loop/Loop/Views/SettingsView+algorithmExperimentsSection.swift b/Loop/Loop/Views/SettingsView+algorithmExperimentsSection.swift
+index 795fbdd8..2dd336dc 100644
+--- a/Loop/Loop/Views/SettingsView+algorithmExperimentsSection.swift
++++ b/Loop/Loop/Views/SettingsView+algorithmExperimentsSection.swift
+@@ -41,6 +41,7 @@ public struct ExperimentRow: View {
+ public struct ExperimentsSettingsView: View {
+     @AppStorage(UserDefaults.Key.GlucoseBasedApplicationFactorEnabled.rawValue) private var isGlucoseBasedApplicationFactorEnabled = false
+     @AppStorage(UserDefaults.Key.IntegralRetrospectiveCorrectionEnabled.rawValue) private var isIntegralRetrospectiveCorrectionEnabled = false
++    @AppStorage(UserDefaults.Key.AdaptiveTherapyEnabled.rawValue) private var isAdaptiveTherapyEnabled = false
+     var automaticDosingStrategy: AutomaticDosingStrategy
+ 
+     public var body: some View {
+@@ -70,6 +71,11 @@ public struct ExperimentsSettingsView: View {
+                         name: NSLocalizedString("Integral Retrospective Correction", comment: "Title of integral retrospective correction experiment"),
+                         enabled: isIntegralRetrospectiveCorrectionEnabled)
+                 }
++                NavigationLink(destination: AdaptiveTherapyView(isAdaptiveTherapyEnabled: $isAdaptiveTherapyEnabled)) {
++                    ExperimentRow(
++                        name: NSLocalizedString("Adaptive Therapy (observation only)", comment: "Title of the adaptive therapy experiment"),
++                        enabled: isAdaptiveTherapyEnabled)
++                }
+                 Spacer()
+             }
+             .padding()
+@@ -83,6 +89,7 @@ extension UserDefaults {
+     fileprivate enum Key: String {
+         case GlucoseBasedApplicationFactorEnabled = "com.loopkit.algorithmExperiments.glucoseBasedApplicationFactorEnabled"
+         case IntegralRetrospectiveCorrectionEnabled = "com.loopkit.algorithmExperiments.integralRetrospectiveCorrectionEnabled"
++        case AdaptiveTherapyEnabled = "com.loopkit.algorithmExperiments.adaptiveTherapyEnabled"
+     }
+ 
+     var glucoseBasedApplicationFactorEnabled: Bool {
+@@ -103,4 +110,15 @@ extension UserDefaults {
+         }
+     }
+ 
++    /// Motore adattivo retrospettivo. In questa fase calcola e registra soltanto:
++    /// non modifica il dosaggio ne' le therapy settings.
++    var adaptiveTherapyEnabled: Bool {
++        get {
++            bool(forKey: Key.AdaptiveTherapyEnabled.rawValue) as Bool
++        }
++        set {
++            set(newValue, forKey: Key.AdaptiveTherapyEnabled.rawValue)
++        }
++    }
++
+ }

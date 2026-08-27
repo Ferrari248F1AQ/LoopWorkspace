@@ -1,0 +1,578 @@
+diff --git a/OmnipodKit/OmnipodKit/Bluetooth/BlePodComms.swift b/OmnipodKit/OmnipodKit/Bluetooth/BlePodComms.swift
+index 2df476e..198bca5 100644
+--- a/OmnipodKit/OmnipodKit/Bluetooth/BlePodComms.swift
++++ b/OmnipodKit/OmnipodKit/Bluetooth/BlePodComms.swift
+@@ -690,6 +690,13 @@ extension BlePodComms: OmniConnectionDelegate {
+     func omnipodPeripheralDidDisconnect(peripheral: CBPeripheral, error: Error?) {
+         if let podState = podState, peripheral.identifier.uuidString == podState.bleIdentifier {
+             log.bleDebug("omnipodPeripheralDidDisconnect for %@", peripheral.identifier.uuidString)
++
++            // Marcare qui, e non solo in omnipodPeripheralDidConnect, elimina la corsa fra
++            // assertConfiguration() (che BluetoothManager lancia in async su un'altra coda)
++            // e l'assegnazione del flag alla riga successiva. Se il blocco async partiva
++            // prima, completeConfiguration() leggeva false e saltava del tutto l'EAP-AKA.
++            needsSessionEstablishment = true
++
+             delegate?.omnipodPeripheralDidDisconnect(peripheral: peripheral, error: error)
+         }
+     }
+diff --git a/OmnipodKit/OmnipodKit/Bluetooth/BluetoothManager.swift b/OmnipodKit/OmnipodKit/Bluetooth/BluetoothManager.swift
+index 894cfea..6b8e70e 100644
+--- a/OmnipodKit/OmnipodKit/Bluetooth/BluetoothManager.swift
++++ b/OmnipodKit/OmnipodKit/Bluetooth/BluetoothManager.swift
+@@ -107,6 +107,10 @@ class BluetoothManager: NSObject {
+     /// Isolated to `managerQueue`
+     private var discoveryModeEnabled: Bool = false
+ 
++    /// Tentativi di connessione falliti consecutivi, per periferica.
++    /// Isolated to `managerQueue`
++    private var failedConnectionAttempts: [UUID: Int] = [:]
++
+     /// Isolated to `managerQueue`
+     private var autoConnectIDs: Set<String> = [] {
+         didSet {
+@@ -431,6 +435,8 @@ extension BluetoothManager: CBCentralManagerDelegate {
+ 
+         log.debug("%{public}@: %{public}@", #function, peripheral)
+         
++        failedConnectionAttempts[peripheral.identifier] = nil
++
+         // Proxy connection events to peripheral manager
+         for device in devices where device.manager.peripheral.identifier == peripheral.identifier {
+             device.manager.centralManager(central, didConnect: peripheral)
+@@ -465,6 +471,29 @@ extension BluetoothManager: CBCentralManagerDelegate {
+         connectionDelegate?.omnipodPeripheralDidFailToConnect(peripheral: peripheral, error: error)
+ 
+         if autoConnectIDs.contains(peripheral.identifier.uuidString) {
++            connectWithBackoff(central, peripheral)
++        }
++    }
++
++    /// Riprova la connessione con attesa crescente: 1, 2, 4, poi 8 secondi.
++    /// Ritentare in un ciclo stretto consuma radio e batteria e non fa ricomparire prima
++    /// una periferica lenta. Il contatore si azzera al primo aggancio riuscito.
++    private func connectWithBackoff(_ central: CBCentralManager, _ peripheral: CBPeripheral) {
++        dispatchPrecondition(condition: .onQueue(managerQueue))
++
++        let attempts = (failedConnectionAttempts[peripheral.identifier] ?? 0) + 1
++        failedConnectionAttempts[peripheral.identifier] = attempts
++
++        let delay = min(pow(2.0, Double(attempts - 1)), 8.0)
++
++        log.default("Reconnect attempt %{public}d for %{public}@ in %{public}.0fs",
++                    attempts, peripheral.identifier.uuidString, delay)
++
++        managerQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
++            guard let self = self else { return }
++            guard self.autoConnectIDs.contains(peripheral.identifier.uuidString) else { return }
++            guard peripheral.state == .disconnected else { return }
++
+             central.connect(peripheral, options: nil)
+         }
+     }
+diff --git a/OmnipodKit/OmnipodKit/Bluetooth/PeripheralManager+OmnipodKit.swift b/OmnipodKit/OmnipodKit/Bluetooth/PeripheralManager+OmnipodKit.swift
+index 60211fa..c104e58 100644
+--- a/OmnipodKit/OmnipodKit/Bluetooth/PeripheralManager+OmnipodKit.swift
++++ b/OmnipodKit/OmnipodKit/Bluetooth/PeripheralManager+OmnipodKit.swift
+@@ -10,7 +10,10 @@
+ import CoreBluetooth
+ import os.log
+ 
+-fileprivate var bleDebugEnabled = false
++/// Tracciatura BLE dettagliata. Spenta per default perche' e' rumorosa e costa batteria,
++/// ma e' l'unico modo perche' il dettaglio di protocollo finisca in un Loop Report.
++/// Si accende dalle impostazioni Omnipod.
++fileprivate var bleDebugEnabled: Bool { Storage.shared.bleDebug.value }
+ 
+ extension OSLog {
+     func bleDebug(_ message: StaticString, _ args: CVarArg...) {
+@@ -242,14 +245,25 @@ extension PeripheralManager {
+         while true {
+             // Wait for data to be read.
+             queueLock.lock()
++            if isLinkDown {
++                queueLock.unlock()
++                log.error("waitForCommand: collegamento caduto, inutile aspettare")
++                throw PeripheralManagerError.notReady
++            }
+             if cmdQueue.count == 0 {
+                 let remaining = deadline.timeIntervalSinceNow
+                 if remaining > 0 {
+                     queueLock.wait(until: deadline)
+                 }
+             }
++            let linkDown = isLinkDown
+             queueLock.unlock()
+ 
++            if linkDown {
++                log.error("waitForCommand: collegamento caduto durante l'attesa")
++                throw PeripheralManagerError.notReady
++            }
++
+             commandLock.lock()
+ 
+             // Lock to protect cmdQueue
+@@ -317,11 +331,22 @@ extension PeripheralManager {
+ 
+         // Wait for data to be read.
+         queueLock.lock()
++        if isLinkDown {
++            queueLock.unlock()
++            log.error("waitForData: collegamento caduto, inutile aspettare")
++            throw PeripheralManagerError.notReady
++        }
+         if (dataQueue.count == 0) {
+             queueLock.wait(until: Date().addingTimeInterval(timeout))
+         }
++        let linkDown = isLinkDown
+         queueLock.unlock()
+ 
++        if linkDown {
++            log.error("waitForData: collegamento caduto durante l'attesa")
++            throw PeripheralManagerError.notReady
++        }
++
+         commandLock.lock()
+         defer {
+             commandLock.unlock()
+diff --git a/OmnipodKit/OmnipodKit/Bluetooth/PeripheralManager.swift b/OmnipodKit/OmnipodKit/Bluetooth/PeripheralManager.swift
+index d253af4..e485944 100644
+--- a/OmnipodKit/OmnipodKit/Bluetooth/PeripheralManager.swift
++++ b/OmnipodKit/OmnipodKit/Bluetooth/PeripheralManager.swift
+@@ -9,6 +9,7 @@
+ 
+ import CoreBluetooth
+ import Foundation
++import UIKit
+ import os.log
+ 
+ class PeripheralManager: NSObject {
+@@ -38,6 +39,12 @@ class PeripheralManager: NSObject {
+     var cmdQueue: [Data] = []
+     let queueLock = NSCondition()
+ 
++    /// Vero fra la disconnessione e la riconnessione. Protetto da `queueLock`.
++    /// Serve perche' un broadcast e' un segnale istantaneo: chi si risveglia deve poter
++    /// capire *perche'* si e' svegliato, altrimenti ricontrolla la coda vuota e torna
++    /// ad aspettare fino alla scadenza, che e' esattamente cio' che volevamo evitare.
++    var isLinkDown = false
++
+     var idleStart: Date? = nil
+ 
+     var needsReconnection: Bool {
+@@ -46,6 +53,33 @@ class PeripheralManager: NSObject {
+         return Date().timeIntervalSince(start) > .minutes(2.9)
+     }
+ 
++    /// iPhone 16 (tutti i modelli) e iPhone 17e sono gli apparecchi su cui i pod DASH con
++    /// radio InPlay BLE (Atlas) riagganciano male. Vedi LoopKit/Loop#2318.
++    private static let slowReconnectHandset: Bool = {
++        let model = UIDevice.modelName
++        return model.contains("iPhone 16") || model == "iPhone 17e"
++    }()
++
++    /// Vero quando questo pod monta la radio lenta e il telefono e' fra quelli problematici.
++    /// I timeout sotto sono tarati sulla vecchia radio NXP e non lasciano abbastanza margine
++    /// alla InPlay per ricomparire dopo una caduta del collegamento.
++    var usesSlowRadioTiming: Bool {
++        guard peripheral.name == "InPlay BLE" else { return false }
++        return PeripheralManager.slowReconnectHandset
++    }
++
++    /// Attesa per la riconnessione forzata. Allungarla incide solo sul percorso di errore.
++    var reconnectTimeout: TimeInterval {
++        usesSlowRadioTiming ? 12 : 5
++    }
++
++    /// Attesa per discovery di servizi e caratteristiche dopo una riconnessione.
++    /// La discovery esce subito quando i servizi sono gia' noti, quindi il valore piu' alto
++    /// non rallenta il percorso normale.
++    var serviceDiscoveryTimeout: TimeInterval {
++        usesSlowRadioTiming ? 5 : 2
++    }
++
+ 
+     /// The dispatch queue used to serialize operations on the peripheral
+     let queue = DispatchQueue(label: "com.loopkit.PeripheralManager.queue", qos: .unspecified)
+@@ -129,7 +163,7 @@ extension PeripheralManager {
+             if self.needsReconnection {
+                 self.log.default("Triggering forceful reconnect")
+                 do {
+-                    try self.reconnect(timeout: 5)
++                    try self.reconnect(timeout: self.reconnectTimeout)
+                 } catch let error {
+                     self.log.error("Error while forcing reconnection: %{public}@", String(describing: error))
+                 }
+@@ -142,7 +176,7 @@ extension PeripheralManager {
+             if self.needsConfiguration || self.peripheral.services == nil {
+                 do {
+                     self.log.bleDebug("Applying configuration")
+-                    try self.applyConfiguration()
++                    try self.applyConfiguration(discoveryTimeout: self.serviceDiscoveryTimeout)
+                     self.needsConfiguration = false
+ 
+                     if let delegate = self.delegate {
+@@ -518,8 +552,38 @@ extension PeripheralManager {
+     func centralManager(_ central: CBCentralManager, didDisconnect peripheral: CBPeripheral, error: Error?) {
+         log.error("[DISCONNECT] PeripheralManager didDisconnect: error=%{public}@ peripheral=%{public}@",
+                   String(describing: error), peripheral)
++
++        // Qualunque thread stia aspettando un comando o dei dati sta aspettando un
++        // collegamento che non esiste piu'. Senza questo risveglio brucia l'intero timeout,
++        // moltiplicato per il numero di frammenti attesi, con la sessionQueue seriale ferma.
++        clearCommsQueues()
++
++        queueLock.lock()
++        isLinkDown = true
++        queueLock.broadcast()
++        queueLock.unlock()
++
++        commandLock.lock()
++        if !commandConditions.isEmpty {
++            // Deve essere un errore, non nil: con commandError azzerato runCommand
++            // esce dal wait, non trova errori e ritorna come se il comando fosse
++            // riuscito. Fra le vittime c'e' reconnect(), che tornerebbe "riconnesso"
++            // proprio mentre il collegamento sta cadendo.
++            commandError = PeripheralManagerError.notReady
++            commandConditions = []
++            commandLock.broadcast()
++        }
++        commandLock.unlock()
++
+         self.queue.async {
+             self.idleStart = nil
++
++            // Obbliga il prossimo configureAndRun() a ripassare da applyConfiguration() e
++            // quindi da completeConfiguration(), dove la sessione BLE viene rinegoziata.
++            // Senza questo la rinegoziazione dipende dal fatto che CoreBluetooth azzeri
++            // peripheral.services, che non e' garantito: si finisce a cifrare con chiavi
++            // vecchie su un collegamento nuovo.
++            self.needsConfiguration = true
+         }
+     }
+ 
+@@ -529,6 +593,10 @@ extension PeripheralManager {
+         case .connected:
+             clearCommsQueues()
+ 
++            queueLock.lock()
++            isLinkDown = false
++            queueLock.unlock()
++
+             /// maximumWriteValueLength (MTU minus 3-byte overhead) is the max bytes to write in a single operation.
+             /// This may report 20 here (MTU 23) initially because iOS auto-negotiates the MTU asynchronously.
+             /// iOS should auto-negotiate a maximumWriteValueLength of 244 for the O5 to match packetLayout.maxPayloadSize.
+diff --git a/OmnipodKit/OmnipodKit/PumpManager/OmniPumpManager.swift b/OmnipodKit/OmnipodKit/PumpManager/OmniPumpManager.swift
+index be782e7..8f1a452 100644
+--- a/OmnipodKit/OmnipodKit/PumpManager/OmniPumpManager.swift
++++ b/OmnipodKit/OmnipodKit/PumpManager/OmniPumpManager.swift
+@@ -380,7 +380,10 @@ public class OmniPumpManager: RileyLinkPumpManager {
+         }
+     }
+ 
+-    private let backgroundTask = BackgroundTask()
++    // Deve essere la stessa istanza usata dalla schermata delle impostazioni
++    // (BackgroundTask.shared): con due istanze separate lo stopBackgroundTask() di una
++    // non ferma il player dell'altra, e il silent tune resta acceso o spento a sorpresa.
++    private let backgroundTask = BackgroundTask.shared
+     @objc func appMovedToBackground() {
+         backgroundTask.startBackgroundTask(hasPod: state.podState != nil)
+     }
+diff --git a/OmnipodKit/OmnipodKit/PumpManagerUI/Views/OmniSettingsView.swift b/OmnipodKit/OmnipodKit/PumpManagerUI/Views/OmniSettingsView.swift
+index 5a4df98..6b4763e 100644
+--- a/OmnipodKit/OmnipodKit/PumpManagerUI/Views/OmniSettingsView.swift
++++ b/OmnipodKit/OmnipodKit/PumpManagerUI/Views/OmniSettingsView.swift
+@@ -601,6 +601,15 @@ struct OmniSettingsView: View  {
+                 }
+             }
+ 
++            Section(footer: FrameworkLocalText("Adds detailed Bluetooth tracing to the Loop Report. Use it while investigating pod connection drops, then turn it back off.", comment: "Footer for the detailed Bluetooth log row")) {
++                Toggle(isOn: Binding(
++                    get: { Storage.shared.bleDebug.value },
++                    set: { Storage.shared.bleDebug.value = $0 }
++                )) {
++                    FrameworkLocalText("Detailed Bluetooth Log", comment: "Title for the detailed Bluetooth log row")
++                }
++            }
++
+             Section() {
+                 let localizedPodDiagnosticsStr = LocalizedString("Pod Diagnostics", comment: "Title for the Pod Diagnostic row and page")
+                 NavigationLink(destination: PodDiagnosticsView(
+diff --git a/OmnipodKit/OmnipodKit/PumpManagerUI/Views/PodKeepAliveView.swift b/OmnipodKit/OmnipodKit/PumpManagerUI/Views/PodKeepAliveView.swift
+index 80f6b2d..eb996a5 100644
+--- a/OmnipodKit/OmnipodKit/PumpManagerUI/Views/PodKeepAliveView.swift
++++ b/OmnipodKit/OmnipodKit/PumpManagerUI/Views/PodKeepAliveView.swift
+@@ -10,6 +10,17 @@
+ import SwiftUI
+ import Combine
+ import Foundation
++import LoopKit
++import os.log
++
++fileprivate let keepAliveLog = OSLog(category: "PodKeepAlive")
++
++/// Tracciatura del keep alive. Prima erano print(), che arrivano solo alla console di Xcode
++/// e non finiscono mai nel Loop Report: cioe' esattamente dove servirebbero per capire
++/// perche' il pod si scollega.
++fileprivate func kaLog(_ message: String) {
++    keepAliveLog.default("%{public}@", message)
++}
+ 
+ struct PodKeepAliveView: View {
+     @ObservedObject var viewModel: PodKeepAliveViewModel = PodKeepAliveViewModel()
+@@ -207,13 +218,13 @@ class PodKeepAliveViewModel: ObservableObject {
+         case .silentTune, .whenOpen:
+             /// Setup a refreshTimer to try to prevent a possible pod disconnect
+             /// pod disconnect if no pod comms are done in the remaining window.
+-            print("handlePodKeepAliveChange: initializing refresh timer for \(refreshInterval.timeIntervalStr) with refreshTimeTarget \(timeStr(refreshTimeTarget))")
++            kaLog("handlePodKeepAliveChange: initializing refresh timer for \(refreshInterval.timeIntervalStr) with refreshTimeTarget \(timeStr(refreshTimeTarget))")
+             setup_refreshTimer(when: refreshInterval)
+ 
+         case .rileyLink:
+             /// trigger a refresh right now if there is less than a minunte until the end of remaining window
+             if refreshInterval < .seconds(60), let refresh = refreshFunc {
+-                print("handlePodKeepAliveChange: calling refresh with only \(refreshInterval.timeIntervalStr) left before refreshTimeTarget \(timeStr(refreshTimeTarget))")
++                kaLog("handlePodKeepAliveChange: calling refresh with only \(refreshInterval.timeIntervalStr) left before refreshTimeTarget \(timeStr(refreshTimeTarget))")
+                 refresh()
+             }
+ 
+@@ -222,11 +233,11 @@ class PodKeepAliveViewModel: ObservableObject {
+         }
+ 
+         if oldValue == .silentTune || newValue == .disabled {
+-            print("handlePodKeepAliveChange: stopping background task")
++            kaLog("handlePodKeepAliveChange: stopping background task")
+             BackgroundTask.shared.stopBackgroundTask()
+         }
+ 
+-        print("handlePodKeepAliveChange: calling BLEManager.disconnect")
++        kaLog("handlePodKeepAliveChange: calling BLEManager.disconnect")
+         BLEManager.shared.disconnect()
+     }
+ }
+@@ -317,6 +328,9 @@ class Storage {
+     var sensorScheduleOffset = StorageValue<Double?>(key: "sensorScheduleOffset", defaultValue: nil)
+     var inBackground = StorageValue<Bool>(key: "inBackground", defaultValue: false)
+ 
++    /// Tracciatura BLE dettagliata nel Loop Report. Vedi bleDebugEnabled.
++    var bleDebug = StorageValue<Bool>(key: "bleDebug", defaultValue: false)
++
+     // Seconds after last update to force another when pod keep alives are enabled.
+     // Should be 60N + some-pad, < 180 (pod disconnect interval), > 60 (RL heartbeat interval)
+     var refreshTimerInterval = StorageValue<TimeInterval>(key: "refreshTimerInterval", defaultValue: (60 * 2) + 40)
+@@ -380,17 +394,54 @@ class BackgroundTask {
+     func startBackgroundTask(hasPod: Bool) {
+         Storage.shared.inBackground.value = true
+         if hasPod && Storage.shared.podKeepAlive.value == .silentTune {
+-            NotificationCenter.default.addObserver(self, selector: #selector(interruptedAudio), name: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance())
++            let nc = NotificationCenter.default
++            // NotificationCenter non deduplica: senza questa rimozione ogni ingresso in
++            // background aggiunge una copia degli observer, e un solo cambio di uscita
++            // audio finirebbe per chiamare playAudio() N volte.
++            nc.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
++            nc.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
++            nc.removeObserver(self, name: AVAudioSession.mediaServicesWereResetNotification, object: nil)
++
++            nc.addObserver(self, selector: #selector(interruptedAudio), name: AVAudioSession.interruptionNotification, object: AVAudioSession.sharedInstance())
++            // Un collegamento CarPlay, delle cuffie o un reset dei media services possono
++            // invalidare la sessione audio senza generare un'interruzione osservabile:
++            // il tune si spegne in silenzio e con lui il keep alive.
++            nc.addObserver(self, selector: #selector(audioRouteChanged), name: AVAudioSession.routeChangeNotification, object: AVAudioSession.sharedInstance())
++            nc.addObserver(self, selector: #selector(mediaServicesReset), name: AVAudioSession.mediaServicesWereResetNotification, object: nil)
+             playAudio()
+         }
+     }
+ 
+     func stopBackgroundTask() {
+         Storage.shared.inBackground.value = false
+-        NotificationCenter.default.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
++        let nc = NotificationCenter.default
++        nc.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
++        nc.removeObserver(self, name: AVAudioSession.routeChangeNotification, object: nil)
++        nc.removeObserver(self, name: AVAudioSession.mediaServicesWereResetNotification, object: nil)
+         player.stop()
+     }
+ 
++    /// Riavvia il tune se e' rimasto fermo dopo un cambio di uscita audio.
++    @objc fileprivate func audioRouteChanged(_ notification: Notification) {
++        guard Storage.shared.inBackground.value,
++              Storage.shared.podKeepAlive.value == .silentTune,
++              !player.isPlaying else {
++            return
++        }
++        kaLog("@@@ silent tune interrotto da un cambio di uscita audio, riavvio")
++        playAudio()
++    }
++
++    /// I media services sono stati reinizializzati: la vecchia sessione audio non vale piu'.
++    @objc fileprivate func mediaServicesReset(_ notification: Notification) {
++        guard Storage.shared.inBackground.value,
++              Storage.shared.podKeepAlive.value == .silentTune else {
++            return
++        }
++        kaLog("@@@ media services reinizializzati, riavvio il silent tune")
++        playAudio()
++    }
++
+     @objc fileprivate func interruptedAudio(_ notification: Notification) {
+         if notification.name == AVAudioSession.interruptionNotification, notification.userInfo != nil,
+            Storage.shared.podKeepAlive.value == .silentTune
+@@ -545,7 +596,7 @@ extension BLEManager: CBCentralManagerDelegate {
+         case .poweredOn:
+             break
+         default:
+-            print("@@@ Central state = \(central.state.rawValue), not powered on.")
++            kaLog("@@@ Central state = \(central.state.rawValue), not powered on.")
+         }
+     }
+ 
+@@ -618,10 +669,10 @@ extension BLEManager: BluetoothDeviceDelegate {
+             let elapsedTime = now.timeIntervalSince(last)
+             if elapsedTime > threshold {
+                 let delay = elapsedTime - expectedInterval
+-                print("@@@ HeartBeat triggered (Delayed by \(String(format: "%.1f", delay)) seconds)")
++                kaLog("@@@ HeartBeat triggered (Delayed by \(String(format: "%.1f", delay)) seconds)")
+             }
+         } else {
+-            print("@@@ HeartBeat triggered (First heartbeat)")
++            kaLog("@@@ HeartBeat triggered (First heartbeat)")
+         }
+ 
+         device.lastHeartbeatTime = now
+@@ -631,17 +682,17 @@ extension BLEManager: BluetoothDeviceDelegate {
+         let refreshTimerInterval = Storage.shared.refreshTimerInterval.value
+         let refreshTargetTime = lastUpdateTime.addingTimeInterval(refreshTimerInterval)
+         let refreshTargetTimeStr = timeStr(refreshTargetTime)
+-        print("@@@ HeartBeat next refresh target time of \(timeStr(lastUpdateTime)) + \(refreshTimerInterval.timeIntervalStr) = \(refreshTargetTimeStr)")
++        kaLog("@@@ HeartBeat next refresh target time of \(timeStr(lastUpdateTime)) + \(refreshTimerInterval.timeIntervalStr) = \(refreshTargetTimeStr)")
+ 
+         let nextExpectedHeartbeatTime = now.addingTimeInterval(expectedInterval)
+         let nextExpectedHeartbeatTimeStr = timeStr(nextExpectedHeartbeatTime)
+-        print("@@@ HeartBeat next heartbeat expected at \(nowTimeStr) + \(expectedInterval.timeIntervalStr) = \(nextExpectedHeartbeatTimeStr)")
++        kaLog("@@@ HeartBeat next heartbeat expected at \(nowTimeStr) + \(expectedInterval.timeIntervalStr) = \(nextExpectedHeartbeatTimeStr)")
+ 
+         let pad: TimeInterval = .seconds(5)
+         if refreshTargetTime < nextExpectedHeartbeatTime - pad {
+-            print("@@@ HeartBeat refreshTargetTime \(refreshTargetTimeStr) within \(pad.timeIntervalStr) of nextExpectedHeartbeatTime \(nextExpectedHeartbeatTimeStr)")
++            kaLog("@@@ HeartBeat refreshTargetTime \(refreshTargetTimeStr) within \(pad.timeIntervalStr) of nextExpectedHeartbeatTime \(nextExpectedHeartbeatTimeStr)")
+             if let refresh = refreshFunc {
+-                print("@@@ HeartBeat calling refresh with inBackground \(Storage.shared.inBackground.value) at \(nowTimeStr)")
++                kaLog("@@@ HeartBeat calling refresh with inBackground \(Storage.shared.inBackground.value) at \(nowTimeStr)")
+                 refresh()
+             }
+         }
+@@ -851,7 +902,7 @@ class BluetoothDevice: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
+         let peripheralName = peripheral.name ?? "Unknown"
+         let errorMessage = error?.localizedDescription ?? "No error details provided"
+ 
+-        print("@@@ Failed to connect to peripheral '\(peripheralName)' (UUID: \(peripheral.identifier.uuidString)). Error: \(errorMessage). Retrying...")
++        kaLog("@@@ Failed to connect to peripheral '\(peripheralName)' (UUID: \(peripheral.identifier.uuidString)). Error: \(errorMessage). Retrying...")
+ 
+         centralManager?.connect(peripheral, options: nil)
+     }
+@@ -912,7 +963,7 @@ class BluetoothDevice: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate
+     }
+ 
+     func centralManager(_: CBCentralManager, willRestoreState _: [String: Any]) {
+-        print("@@@ Restoring BLE after crash/kill")
++        kaLog("@@@ Restoring BLE after crash/kill")
+     }
+ 
+     private func initialize() {
+@@ -1198,11 +1249,13 @@ func podKeepAliveSetup(refresh: @escaping () -> Void) {
+         break
+ 
+     case .rileyLink:
+-        /// Try to force an attempt to connect if there is a selected BLE heartbeat device
+-        /// XXX doesn't seem to work reliably, still best to manually select RL device on restarts
+-        let bleManager = BLEManager()
++        /// Try to force an attempt to connect if there is a selected BLE heartbeat device.
++        /// Era `BLEManager()`: un'istanza locale che usciva di scope a fine funzione, veniva
++        /// deallocata e nel deinit chiamava disconnect(). Da qui il vecchio commento
++        /// "doesn't seem to work reliably". Con .shared la connessione sopravvive.
++        let bleManager = BLEManager.shared
+         if let device = Storage.shared.selectedBLEDevice.value {
+-            print("@@@ podKeepAliveSetup attempting connect to \(device.name ?? "unknown name")")
++            kaLog("@@@ podKeepAliveSetup attempting connect to \(device.name ?? "unknown name")")
+             bleManager.connect(device: device)
+         }
+ 
+@@ -1220,23 +1273,66 @@ fileprivate func timeStr(_ when: Date) -> String {
+ 
+ fileprivate var refreshTimer: Timer?
+ 
++/// Attese fra un tentativo di refresh e il successivo quando il pod non risponde.
++/// L'indice torna a zero appena il pod risponde (vedi gotPodResponse).
++fileprivate let refreshRetryIntervals: [TimeInterval] = [45, 90, 150]
++fileprivate var refreshRetryIndex = 0
++
++/// Cresce a ogni armo del timer. Il blocco cattura il valore corrente e riarma solo se
++/// nel frattempo non e' cambiato: se il pod ha risposto, gotPodResponse() ha gia' armato
++/// il timer buono e il ritentativo deve stare zitto.
++fileprivate var refreshGeneration = 0
++
+ /// Manages private refreshTimer to implement pod keep alives
+ /// when in foreground, playing a silent tune, or under Xcode.
+ func setup_refreshTimer(when: TimeInterval) {
++    // Timer e RunLoop vanno toccati dal main: invalidate() da un thread diverso da quello
++    // del run loop e' comportamento indefinito, e qui gotPodResponse() arriva dalla coda BLE.
++    guard Thread.isMainThread else {
++        DispatchQueue.main.async { setup_refreshTimer(when: when) }
++        return
++    }
++
+     // The following code implements a timer to trigger a refresh
+     // after refreshTimerInterval seconds has past since the last response,
+     refreshTimer?.invalidate()
++
++    refreshGeneration += 1
++    let generation = refreshGeneration
++
+     refreshTimer = Timer(timeInterval: when, repeats: false) { _ in
+         if let refresh = refreshFunc {
+-            print("@@@ refreshTimer expired, doing refresh at \(timeStr(Date()))")
++            kaLog("@@@ refreshTimer expired, doing refresh at \(timeStr(Date()))")
+             refresh()
+         }
++
++        // Se refresh() ha gia' ottenuto risposta, gotPodResponse() ha riarmato il timer e
++        // incrementato la generazione: qui non c'e' piu' niente da fare.
++        guard generation == refreshGeneration else {
++            return
++        }
++
++        // Il refresh fallisce all'istante quando il collegamento e' gia' caduto, e in quel
++        // caso nessuna risposta del pod riarma questo timer one-shot: la catena di keep alive
++        // moriva qui e restava morta. Armiamo un ritentativo; gotPodResponse() lo sostituisce
++        // con l'intervallo pieno non appena il pod risponde.
++        let podKeepAlive = Storage.shared.podKeepAlive.value
++        guard podKeepAlive == .whenOpen || podKeepAlive == .silentTune else {
++            return
++        }
++
++        let retry = refreshRetryIntervals[min(refreshRetryIndex, refreshRetryIntervals.count - 1)]
++        refreshRetryIndex += 1
++        kaLog("@@@ refreshTimer nessuna risposta, riprovo fra \(retry.timeIntervalStr)")
++        setup_refreshTimer(when: retry)
+     }
+ 
+     let now = Date()
+     let refreshTimerTarget = now + when
+-    print("@@@ refreshTimer created for \(timeStr(now)) + \(when.timeIntervalStr) = \(timeStr(refreshTimerTarget))")
+-    RunLoop.main.add(refreshTimer!, forMode: .default)
++    kaLog("@@@ refreshTimer created for \(timeStr(now)) + \(when.timeIntervalStr) = \(timeStr(refreshTimerTarget))")
++    // .common e non .default: in .default il timer non scatta mentre e' in corso un gesto di
++    // scorrimento, e uno scroll lungo basta a superare la finestra di 180 s del pod.
++    RunLoop.main.add(refreshTimer!, forMode: .common)
+ }
+ 
+ /// Called for each pod response received.
+@@ -1244,6 +1340,8 @@ func setup_refreshTimer(when: TimeInterval) {
+ func gotPodResponse() {
+     let now = Date()
+     Storage.shared.lastUpdateTime.value = now
++    refreshRetryIndex = 0
++    refreshGeneration += 1
+ 
+     let podKeepAlive = Storage.shared.podKeepAlive.value
+     if podKeepAlive == .disabled || podKeepAlive == .rileyLink {

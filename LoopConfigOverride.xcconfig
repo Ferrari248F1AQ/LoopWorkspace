@@ -14,3 +14,8 @@ SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) EXPERIMENTAL_FEATURES_ENABLED
 
 // Put your team id here for signing
 //LOOP_DEVELOPMENT_TEAM = UY678SP37Q
+
+// Storico locale: 21 giorni invece dei 7 di default.
+// Serve al motore adattivo multi-giorno (statistiche su 3 settimane).
+// Effetto collaterale: device log e dosing decisions crescono ~3x.
+LOOP_LOCAL_CACHE_DURATION_DAYS = 21
