@@ -1,28 +1,34 @@
 diff --git a/Loop/Common/Models/StatusExtensionContext.swift b/Loop/Common/Models/StatusExtensionContext.swift
-index bee1f328..aa007b4a 100644
+index bee1f328..38492fc2 100644
 --- a/Loop/Common/Models/StatusExtensionContext.swift
 +++ b/Loop/Common/Models/StatusExtensionContext.swift
-@@ -310,6 +310,7 @@ struct StatusExtensionContext: RawRepresentable {
+@@ -310,6 +310,11 @@ struct StatusExtensionContext: RawRepresentable {
      var cgmStatusHighlightContext: DeviceStatusHighlightContext?
      var cgmLifecycleProgressContext: DeviceLifecycleProgressContext?
      var carbsOnBoard: Double?
 +    var activeInsulin: Double?
++    /// Unita' glicemica scelta dall'utente, come stringa ("mg/dL" o "mmol/L").
++    /// La scrive l'app: l'estensione widget non ha accesso a Salute e senza questa
++    /// resterebbe senza unita', quindi senza niente da mostrare.
++    var glucoseUnitString: String?
      
      init() { }
      
-@@ -335,6 +336,7 @@ struct StatusExtensionContext: RawRepresentable {
+@@ -335,6 +340,8 @@ struct StatusExtensionContext: RawRepresentable {
          batteryPercentage = rawValue["batteryPercentage"] as? Double
          reservoirCapacity = rawValue["reservoirCapacity"] as? Double
          carbsOnBoard = rawValue["carbsOnBoard"] as? Double
 +        activeInsulin = rawValue["activeInsulin"] as? Double
++        glucoseUnitString = rawValue["glucoseUnitString"] as? String
  
          if let rawValue = rawValue["glucoseDisplay"] as? GlucoseDisplayableContext.RawValue {
              glucoseDisplay = GlucoseDisplayableContext(rawValue: rawValue)
-@@ -383,6 +385,7 @@ struct StatusExtensionContext: RawRepresentable {
+@@ -383,6 +390,8 @@ struct StatusExtensionContext: RawRepresentable {
          raw["cgmStatusHighlightContext"] = cgmStatusHighlightContext?.rawValue
          raw["cgmLifecycleProgressContext"] = cgmLifecycleProgressContext?.rawValue
          raw["carbsOnBoard"] = carbsOnBoard
 +        raw["activeInsulin"] = activeInsulin
++        raw["glucoseUnitString"] = glucoseUnitString
          
          return raw
      }
@@ -75,10 +81,10 @@ index 45271bbe..ee27cbf6 100644
      
      let preMealPresetAllowed: Bool
 diff --git a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift
-index beb8bd2f..daf176e3 100644
+index beb8bd2f..aa440ddf 100644
 --- a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift	
 +++ b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift	
-@@ -13,31 +13,73 @@ import OSLog
+@@ -13,31 +13,107 @@ import OSLog
  import WidgetKit
  
  class StatusWidgetTimelineProvider: TimelineProvider {
@@ -131,33 +137,67 @@ index beb8bd2f..daf176e3 100644
 +    private static let stores = Stores()
 +
 +    static let sharedDefaults = UserDefaults.appGroup
++
++    static let sharedHealthStore = HKHealthStore()
++
++    var defaults: UserDefaults? { StatusWidgetTimelineProvider.sharedDefaults }
++
++    var healthStore: HKHealthStore { StatusWidgetTimelineProvider.sharedHealthStore }
++
++    var cacheStore: PersistenceController { StatusWidgetTimelineProvider.stores.cacheStore }
  
 -    lazy var cacheStore = PersistenceController.controllerInAppGroupDirectory()
-+    static let sharedHealthStore = HKHealthStore()
++    var localCacheDuration: TimeInterval { StatusWidgetTimelineProvider.stores.localCacheDuration }
  
 -    lazy var localCacheDuration = Bundle.main.localCacheDuration
-+    var defaults: UserDefaults? { StatusWidgetTimelineProvider.sharedDefaults }
++    var settingsStore: SettingsStore { StatusWidgetTimelineProvider.stores.settingsStore }
  
 -    lazy var settingsStore: SettingsStore =  SettingsStore(
 -        store: cacheStore,
 -        expireAfter: localCacheDuration)
-+    var healthStore: HKHealthStore { StatusWidgetTimelineProvider.sharedHealthStore }
++    var glucoseStore: GlucoseStore { StatusWidgetTimelineProvider.stores.glucoseStore }
  
 -    lazy var glucoseStore = GlucoseStore(
 -        cacheStore: cacheStore,
 -        provenanceIdentifier: HKSource.default().bundleIdentifier
 -    )
-+    var cacheStore: PersistenceController { StatusWidgetTimelineProvider.stores.cacheStore }
-+
-+    var localCacheDuration: TimeInterval { StatusWidgetTimelineProvider.stores.localCacheDuration }
-+
-+    var settingsStore: SettingsStore { StatusWidgetTimelineProvider.stores.settingsStore }
-+
-+    var glucoseStore: GlucoseStore { StatusWidgetTimelineProvider.stores.glucoseStore }
-+
 +    private let log = OSLog(category: "LoopWidgets")
 +
 +    static let stalenessAge = TimeInterval(minutes: 6)
++
++    /// Voce senza dati: il widget disegna "---" e si mostra spento.
++    ///
++    /// Serve perche' WidgetKit vuole SEMPRE una risposta. Se non gliela dai resta
++    /// appeso al segnaposto - un riquadro vuoto - e non ci riprova.
++    private func emptyEntry(unit: HKUnit?) -> StatusWidgetTimelimeEntry {
++        return StatusWidgetTimelimeEntry(
++            date: Date(), contextUpdatedAt: .distantPast, lastLoopCompleted: nil, closeLoop: false,
++            currentGlucose: nil, glucoseFetchedAt: nil, delta: nil,
++            unit: unit ?? .milligramsPerDeciliter, sensor: nil, pumpHighlight: nil, netBasal: nil,
++            activeInsulin: nil, carbsOnBoard: nil, glucoseHistory: [], predictedGlucose: [],
++            eventualGlucose: nil, preMealPresetAllowed: true, preMealPresetActive: false,
++            customPresetActive: false)
++    }
++
++    /// L'unita' glicemica, cercata dove e' effettivamente raggiungibile.
++    ///
++    /// L'estensione widget NON ha il permesso di Salute (nei suoi entitlement c'e' solo
++    /// il gruppo condiviso), quindi `cachedPreferredUnits` qui torna nil quasi sempre -
++    /// e prima bastava questo a far uscire dalla funzione senza rispondere, lasciando il
++    /// widget vuoto per sempre. L'unita' la scrive l'app nel contesto condiviso; Salute
++    /// resta come seconda scelta, e mg/dL come ultima spiaggia.
++    private func resolveUnit(context: StatusExtensionContext?, healthKitUnit: HKUnit?) -> HKUnit {
++        if let unitString = context?.glucoseUnitString {
++            return HKUnit(from: unitString)
++        }
++        if let healthKitUnit = healthKitUnit {
++            return healthKitUnit
++        }
++        if let unit = context?.predictedGlucose?.unit {
++            return unit
++        }
++        return .milligramsPerDeciliter
++    }
  
      func placeholder(in context: Context) -> StatusWidgetTimelimeEntry {
          log.default("%{public}@: context=%{public}@", #function, String(describing: context))
@@ -167,7 +207,34 @@ index beb8bd2f..daf176e3 100644
      }
  
      func getSnapshot(in context: Context, completion: @escaping (StatusWidgetTimelimeEntry) -> ()) {
-@@ -94,9 +136,10 @@ class StatusWidgetTimelineProvider: TimelineProvider {
+@@ -74,15 +150,22 @@ class StatusWidgetTimelineProvider: TimelineProvider {
+             // Date context staleness changes
+             datesToRefreshWidget.append(newEntry.contextUpdatedAt.addingTimeInterval(StatusWidgetTimelineProvider.stalenessAge+1))
+ 
+-            for date in datesToRefreshWidget {
++            // Solo date future e in ordine: una voce datata nel passato (succede quando
++            // non c'e' contesto e la data di riferimento e' `distantPast`) WidgetKit non
++            // sa dove metterla.
++            let now = Date()
++            for date in datesToRefreshWidget.filter({ $0 > now }).sorted() {
+                 // Copy the previous entry but mark it as stale
+                 var copiedEntry = newEntry
+                 copiedEntry.date = date
+                 entries.append(copiedEntry)
+             }
+-                                
+-            let nextHour = Date().addingTimeInterval(.hours(1))
+-            let timeline = Timeline(entries: entries, policy: .after(nextHour))
++
++            // Se non c'e' ancora niente da mostrare non ha senso aspettare un'ora prima
++            // di riprovare: l'app potrebbe aver scritto i dati un istante dopo.
++            let hasContext = newEntry.contextUpdatedAt > Date.distantPast
++            let nextRefresh = now.addingTimeInterval(hasContext ? .hours(1) : .minutes(15))
++            let timeline = Timeline(entries: entries, policy: .after(nextRefresh))
+             self.log.default("Returning timeline: %{public}@", String(describing: datesToRefreshWidget))
+             completion(timeline)
+         }
+@@ -94,9 +177,10 @@ class StatusWidgetTimelineProvider: TimelineProvider {
          var glucose: [StoredGlucoseSample] = []
  
          let startDate = Date(timeIntervalSinceNow: -LoopCoreConstants.inputDataRecencyInterval)
@@ -179,7 +246,7 @@ index beb8bd2f..daf176e3 100644
              switch result {
              case .failure:
                  self.log.error("Failed to fetch glucose after %{public}@", String(describing: startDate))
-@@ -109,7 +152,12 @@ class StatusWidgetTimelineProvider: TimelineProvider {
+@@ -109,14 +193,23 @@ class StatusWidgetTimelineProvider: TimelineProvider {
          }
          group.wait()
  
@@ -192,8 +259,24 @@ index beb8bd2f..daf176e3 100644
 +        let finalGlucose = glucose.filter { $0.startDate >= startDate }
  
          Task { @MainActor in
-             guard let defaults = self.defaults,
-@@ -166,6 +214,10 @@ class StatusWidgetTimelineProvider: TimelineProvider {
+-            guard let defaults = self.defaults,
+-                  let context = defaults.statusExtensionContext,
+-                  let contextUpdatedAt = context.createdAt,
+-                  let unit = await healthStore.cachedPreferredUnits(for: .bloodGlucose)
+-            else {
++            let context = self.defaults?.statusExtensionContext
++            let healthKitUnit = await healthStore.cachedPreferredUnits(for: .bloodGlucose)
++            let unit = self.resolveUnit(context: context, healthKitUnit: healthKitUnit)
++
++            guard let context = context, let contextUpdatedAt = context.createdAt else {
++                // Nessun dato dall'app: si risponde lo stesso, con una voce vuota.
++                // Tacere qui significa lasciare il widget sul segnaposto all'infinito.
++                self.log.error("Nessun contesto condiviso dall'app: mostro il widget vuoto")
++                completion(self.emptyEntry(unit: unit))
+                 return
+             }
+ 
+@@ -166,6 +259,10 @@ class StatusWidgetTimelineProvider: TimelineProvider {
                  sensor: context.glucoseDisplay,
                  pumpHighlight: context.pumpStatusHighlightContext,
                  netBasal: netBasal,
@@ -2192,19 +2275,20 @@ index ff678a88..d0191bc7 100644
          guard let pumpManager = pumpManager else {
              return unitsPerHour
 diff --git a/Loop/Loop/Managers/ExtensionDataManager.swift b/Loop/Loop/Managers/ExtensionDataManager.swift
-index 9261dcfc..c8e2789a 100644
+index 9261dcfc..6e666b02 100644
 --- a/Loop/Loop/Managers/ExtensionDataManager.swift
 +++ b/Loop/Loop/Managers/ExtensionDataManager.swift
-@@ -166,6 +166,7 @@ final class ExtensionDataManager {
+@@ -166,6 +166,8 @@ final class ExtensionDataManager {
              context.cgmLifecycleProgressContext = DeviceLifecycleProgressContext(from: dataManager.cgmLifecycleProgress)
  
              context.carbsOnBoard = state.carbsOnBoard?.quantity.doubleValue(for: .gram())
 +            context.activeInsulin = state.insulinOnBoard?.value
++            context.glucoseUnitString = glucoseUnit.unitString
              
              completionHandler(context)
          }
 diff --git a/Loop/Loop/Managers/Live Activity/LiveActivityManager.swift b/Loop/Loop/Managers/Live Activity/LiveActivityManager.swift
-index f7a4723f..905835bb 100644
+index f7a4723f..1e426644 100644
 --- a/Loop/Loop/Managers/Live Activity/LiveActivityManager.swift	
 +++ b/Loop/Loop/Managers/Live Activity/LiveActivityManager.swift	
 @@ -12,6 +12,7 @@ import LoopCore
@@ -2254,7 +2338,7 @@ index f7a4723f..905835bb 100644
          nc.addObserver(self, selector: #selector(self.settingsChanged), name: .LiveActivitySettingsChanged, object: nil)
          guard self.settings.enabled else {
              return
-@@ -87,13 +97,22 @@ class LiveActivityManager : LiveActivityManagerProxy {
+@@ -87,13 +97,30 @@ class LiveActivityManager : LiveActivityManagerProxy {
      
      private func update() {
          Task {
@@ -2272,13 +2356,22 @@ index f7a4723f..905835bb 100644
                  await endActivity()
              }
              
-             guard let unit = await self.healthStore.cachedPreferredUnits(for: .bloodGlucose) else {
+-            guard let unit = await self.healthStore.cachedPreferredUnits(for: .bloodGlucose) else {
 -                print("ERROR: No unit found...")
-+                self.log.error("Live Activity non aggiornata: nessuna unita' glicemica in Salute")
++            // Salute puo' rispondere a vuoto quando i dati protetti non sono ancora
++            // disponibili (telefono non sbloccato dall'avvio). In quel caso l'unita' la
++            // sa gia' il contesto condiviso, scritto dall'app stessa: usare quella e'
++            // meglio che rinunciare e lasciare la Live Activity ferma.
++            var resolvedUnit = await self.healthStore.cachedPreferredUnits(for: .bloodGlucose)
++            if resolvedUnit == nil, let unitString = UserDefaults.appGroup?.statusExtensionContext?.glucoseUnitString {
++                resolvedUnit = HKUnit(from: unitString)
++            }
++            guard let unit = resolvedUnit else {
++                self.log.error("Live Activity non aggiornata: unita' glicemica sconosciuta")
                  return
              }
              
-@@ -105,7 +124,7 @@ class LiveActivityManager : LiveActivityManagerProxy {
+@@ -105,7 +132,7 @@ class LiveActivityManager : LiveActivityManagerProxy {
              
              let glucoseSamples = self.getGlucoseSample(unit: unit)
              guard let currentGlucose = glucoseSamples.last else {
@@ -2287,7 +2380,7 @@ index f7a4723f..905835bb 100644
                  return
              }
  
-@@ -233,10 +252,37 @@ class LiveActivityManager : LiveActivityManagerProxy {
+@@ -233,10 +260,37 @@ class LiveActivityManager : LiveActivityManagerProxy {
          }
      }
      
@@ -2325,7 +2418,7 @@ index f7a4723f..905835bb 100644
          
          guard let activity = self.activity else {
              initEmptyActivity(settings: self.settings)
-@@ -268,7 +314,19 @@ class LiveActivityManager : LiveActivityManagerProxy {
+@@ -268,7 +322,19 @@ class LiveActivityManager : LiveActivityManagerProxy {
          for unknownActivity in Activity<GlucoseActivityAttributes>.activities {
              await unknownActivity.end(nil, dismissalPolicy: .immediate)
          }
@@ -2346,7 +2439,7 @@ index f7a4723f..905835bb 100644
          do {
              if let dynamicState = dynamicState {
                  self.activity = try Activity.request(
-@@ -287,7 +345,7 @@ class LiveActivityManager : LiveActivityManagerProxy {
+@@ -287,7 +353,7 @@ class LiveActivityManager : LiveActivityManagerProxy {
              }
              self.startDate = Date.now
          } catch {
@@ -2355,7 +2448,7 @@ index f7a4723f..905835bb 100644
          }
      }
      
-@@ -565,7 +623,7 @@ class LiveActivityManager : LiveActivityManagerProxy {
+@@ -565,7 +631,7 @@ class LiveActivityManager : LiveActivityManagerProxy {
                  pushType: .token
              )
          } catch {
