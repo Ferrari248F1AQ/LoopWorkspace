@@ -2204,10 +2204,128 @@ index 9261dcfc..c8e2789a 100644
              completionHandler(context)
          }
 diff --git a/Loop/Loop/Managers/Live Activity/LiveActivityManager.swift b/Loop/Loop/Managers/Live Activity/LiveActivityManager.swift
-index f7a4723f..e27c199f 100644
+index f7a4723f..905835bb 100644
 --- a/Loop/Loop/Managers/Live Activity/LiveActivityManager.swift	
 +++ b/Loop/Loop/Managers/Live Activity/LiveActivityManager.swift	
-@@ -268,7 +268,19 @@ class LiveActivityManager : LiveActivityManagerProxy {
+@@ -12,6 +12,7 @@ import LoopCore
+ import Foundation
+ import HealthKit
+ import ActivityKit
++import os.log
+ 
+ extension Notification.Name {
+     static let LiveActivitySettingsChanged = Notification.Name(rawValue: "com.loopKit.notification.LiveActivitySettingsChanged")
+@@ -19,6 +20,7 @@ extension Notification.Name {
+ 
+ @available(iOS 16.2, *)
+ class LiveActivityManager : LiveActivityManagerProxy {
++    private let log = OSLog(category: "LiveActivityManager")
+     private let activityInfo = ActivityAuthorizationInfo()
+     private var activity: Activity<GlucoseActivityAttributes>?
+     private let healthStore = HKHealthStore()
+@@ -28,6 +30,9 @@ class LiveActivityManager : LiveActivityManagerProxy {
+     private var loopSettings: LoopSettings
+     
+     private var startDate: Date = Date.now
++    /// Quando e' stato gestito l'ultimo passaggio in primo piano, per non pestarsi i piedi
++    /// con la ricreazione che parte subito dopo su "app diventata attiva".
++    private var lastForegroundHandling: Date = .distantPast
+     private var settings: LiveActivitySettings = UserDefaults.standard.liveActivity ?? LiveActivitySettings()
+     
+     private let cobFormatter: NumberFormatter =  {
+@@ -52,7 +57,7 @@ class LiveActivityManager : LiveActivityManagerProxy {
+     
+     init?(glucoseStore: GlucoseStoreProtocol, doseStore: DoseStoreProtocol, loopSettings: LoopSettings) {
+         guard self.activityInfo.areActivitiesEnabled else {
+-            print("ERROR: Live Activities are not enabled...")
++            OSLog(category: "LiveActivityManager").error("Live Activity non avviata: le attivita' in tempo reale sono disattivate per Loop nelle impostazioni di iOS")
+             return nil
+         }
+         
+@@ -67,6 +72,11 @@ class LiveActivityManager : LiveActivityManagerProxy {
+         
+         let nc = NotificationCenter.default
+         nc.addObserver(self, selector: #selector(self.appMovedToForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
++        // willEnterForeground non arriva se l'app era gia' in primo piano, o se e' stata
++        // avviata direttamente li'. didBecomeActive si', ed e' il momento in cui ActivityKit
++        // accetta di creare un'attivita': quindi e' l'occasione buona per rimediare a una
++        // creazione fallita in background, senza buttare via quella che gia' funziona.
++        nc.addObserver(self, selector: #selector(self.appBecameActive), name: UIApplication.didBecomeActiveNotification, object: nil)
+         nc.addObserver(self, selector: #selector(self.settingsChanged), name: .LiveActivitySettingsChanged, object: nil)
+         guard self.settings.enabled else {
+             return
+@@ -87,13 +97,22 @@ class LiveActivityManager : LiveActivityManagerProxy {
+     
+     private func update() {
+         Task {
++            // Un aggiornamento verso un'attivita' che non esiste e' un colpo a vuoto:
++            // se manca e l'app e' in primo piano (l'unico momento in cui ActivityKit
++            // accetta di crearne una), la si ricrea prima di proseguire.
++            if self.settings.enabled, self.activity == nil,
++               await UIApplication.shared.applicationState == .active {
++                self.log.default("Live Activity assente durante l'aggiornamento: la ricreo")
++                self.initEmptyActivity(settings: self.settings)
++            }
++
+             if self.needsRecreation(), await UIApplication.shared.applicationState == .active {
+                 // activity is no longer visible or old. End it and try to push the update again
+                 await endActivity()
+             }
+             
+             guard let unit = await self.healthStore.cachedPreferredUnits(for: .bloodGlucose) else {
+-                print("ERROR: No unit found...")
++                self.log.error("Live Activity non aggiornata: nessuna unita' glicemica in Salute")
+                 return
+             }
+             
+@@ -105,7 +124,7 @@ class LiveActivityManager : LiveActivityManagerProxy {
+             
+             let glucoseSamples = self.getGlucoseSample(unit: unit)
+             guard let currentGlucose = glucoseSamples.last else {
+-                print("ERROR: No glucose sample found...")
++                self.log.error("Live Activity non aggiornata: nessuna lettura glicemica")
+                 return
+             }
+ 
+@@ -233,10 +252,37 @@ class LiveActivityManager : LiveActivityManagerProxy {
+         }
+     }
+     
++    /// Se l'attivita' non c'e', la ricrea. Se c'e', non tocca niente.
++    ///
++    /// Serve perche' ActivityKit rifiuta di creare un'attivita' mentre l'app sta in
++    /// background, e Loop viene riavviata in background di continuo (risveglio Bluetooth,
++    /// notifica silenziosa, aggiornamento dell'app). Quando succede, la creazione fallisce
++    /// una volta e poi non ci riprova nessuno: `update()` con `activity` a nil non fa
++    /// niente - manda l'aggiornamento a un'attivita' che non esiste - e `endActivity()`
++    /// viene chiamata solo se l'app e' gia' in primo piano. Risultato: Live Activity
++    /// sparita, e non torna finche' l'app non passa da background a primo piano.
++    @objc private func appBecameActive() {
++        guard self.settings.enabled, self.activity == nil else {
++            return
++        }
++
++        // Se il passaggio in primo piano e' appena stato gestito, quello sta gia'
++        // ricreando l'attivita' in un Task: mettersi in mezzo qui ne creerebbe una seconda.
++        guard Date.now.timeIntervalSince(lastForegroundHandling) > 2 else {
++            return
++        }
++
++        self.log.default("Live Activity assente all'attivazione dell'app: la ricreo")
++        initEmptyActivity(settings: self.settings)
++        update()
++    }
++
+     @objc private func appMovedToForeground() {
+         guard self.settings.enabled else {
+             return
+         }
++
++        self.lastForegroundHandling = Date.now
+         
+         guard let activity = self.activity else {
+             initEmptyActivity(settings: self.settings)
+@@ -268,7 +314,19 @@ class LiveActivityManager : LiveActivityManagerProxy {
          for unknownActivity in Activity<GlucoseActivityAttributes>.activities {
              await unknownActivity.end(nil, dismissalPolicy: .immediate)
          }
@@ -2228,6 +2346,24 @@ index f7a4723f..e27c199f 100644
          do {
              if let dynamicState = dynamicState {
                  self.activity = try Activity.request(
+@@ -287,7 +345,7 @@ class LiveActivityManager : LiveActivityManagerProxy {
+             }
+             self.startDate = Date.now
+         } catch {
+-            print("ERROR: Error while ending live activity: \(error.localizedDescription)")
++            self.log.error("Live Activity non ricreata dopo la chiusura: %{public}@", String(describing: error))
+         }
+     }
+     
+@@ -565,7 +623,7 @@ class LiveActivityManager : LiveActivityManagerProxy {
+                 pushType: .token
+             )
+         } catch {
+-            print("ERROR: Error while creating empty live activity: \(error.localizedDescription)")
++            self.log.error("Live Activity non creata: %{public}@", String(describing: error))
+         }
+     }
+ }
 diff --git a/Loop/Loop/Managers/LoopDataManager.swift b/Loop/Loop/Managers/LoopDataManager.swift
 index c9aef285..4c5e4b95 100644
 --- a/Loop/Loop/Managers/LoopDataManager.swift
