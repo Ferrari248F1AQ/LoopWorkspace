@@ -26,71 +26,139 @@ index bee1f328..aa007b4a 100644
          
          return raw
      }
-diff --git a/Loop/Loop Widget Extension/Components/GlucoseView.swift b/Loop/Loop Widget Extension/Components/GlucoseView.swift
-index a0d5c5c2..be74b5f0 100644
---- a/Loop/Loop Widget Extension/Components/GlucoseView.swift	
-+++ b/Loop/Loop Widget Extension/Components/GlucoseView.swift	
-@@ -26,16 +26,16 @@ struct GlucoseView: View {
-                     let glucoseFormatter = NumberFormatter.glucoseFormatter(for: unit)
-                     if let glucoseString = glucoseFormatter.string(from: quantity.doubleValue(for: unit)) {
-                         Text(glucoseString)
--                            .font(.system(size: 24, weight: .heavy, design: .default))
-+                            .font(.system(size: 24, weight: .heavy, design: .rounded))
-                     }
-                     else {
-                         Text("??")
--                            .font(.system(size: 24, weight: .heavy, design: .default))
-+                            .font(.system(size: 24, weight: .heavy, design: .rounded))
-                     }
-                 }
-                 else {
-                     Text("---")
--                        .font(.system(size: 24, weight: .heavy, design: .default))
-+                        .font(.system(size: 24, weight: .heavy, design: .rounded))
-                 }
-                 
-                 if let trendImageName = getArrowImage() {
 diff --git a/Loop/Loop Widget Extension/LoopWidgets.swift b/Loop/Loop Widget Extension/LoopWidgets.swift
-index f87c2b89..50100b4b 100644
+index f87c2b89..81a5228c 100644
 --- a/Loop/Loop Widget Extension/LoopWidgets.swift	
 +++ b/Loop/Loop Widget Extension/LoopWidgets.swift	
-@@ -16,6 +16,9 @@ struct LoopWidgets: WidgetBundle {
+@@ -13,11 +13,15 @@ struct LoopWidgets: WidgetBundle {
+ 
+     @WidgetBundleBuilder
+     var body: some Widget {
++        // La Live Activity per prima: e' la cosa che si guarda tutto il giorno.
++        if #available(iOS 16.2, *) {
++            GlucoseLiveActivityConfiguration()
++        }
          if #available(iOS 16.1, *) {
              SystemStatusWidget()
          }
+-        if #available(iOS 16.2, *) {
+-            GlucoseLiveActivityConfiguration()
 +        if #available(iOS 16.0, *) {
 +            LockScreenGlucoseWidget()
-+        }
-         if #available(iOS 16.2, *) {
-             GlucoseLiveActivityConfiguration()
          }
+     }
+ }
 diff --git a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift
-index 45271bbe..6884f5f8 100644
+index 45271bbe..ee27cbf6 100644
 --- a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift	
 +++ b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift	
-@@ -27,6 +27,17 @@ struct StatusWidgetTimelimeEntry: TimelineEntry {
+@@ -27,7 +27,20 @@ struct StatusWidgetTimelimeEntry: TimelineEntry {
  
      let pumpHighlight: DeviceStatusHighlightContext?
      let netBasal: NetBasalContext?
+-    
 +
 +    /// Insulina attiva in unita' e carboidrati attivi in grammi: sono i due numeri che
-+    /// stanno nella riga in basso della Live Activity, e senza i quali il widget dice
-+    /// meno di quanto potrebbe.
++    /// stanno nella riga in basso della Live Activity, e senza i quali un widget dice
++    /// molto meno di quanto potrebbe.
 +    let activeInsulin: Double?
 +    let carbsOnBoard: Double?
 +
-+    /// Storico e previsione in mg/dL, per il grafichino del widget rettangolare.
-+    /// Solo i valori: assi e etichette in quello spazio non ci starebbero comunque.
++    /// Storico e previsione in mg/dL, solo per la strisciolina del widget rettangolare.
++    /// Sono numeri nudi: assi ed etichette in quello spazio non ci starebbero comunque.
++    /// Lo storico qui e' piu' lungo della finestra di validita' della lettura corrente,
++    /// quindi non va MAI usato per dire "la glicemia adesso e' questa".
 +    let glucoseHistory: [Double]
 +    let predictedGlucose: [Double]
-     
++
      let eventualGlucose: GlucoseContext?
      
+     let preMealPresetAllowed: Bool
 diff --git a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift
-index beb8bd2f..c14df4ab 100644
+index beb8bd2f..daf176e3 100644
 --- a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift	
 +++ b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift	
-@@ -37,7 +37,7 @@ class StatusWidgetTimelineProvider: TimelineProvider {
+@@ -13,31 +13,73 @@ import OSLog
+ import WidgetKit
+ 
+ class StatusWidgetTimelineProvider: TimelineProvider {
+-    lazy var defaults = UserDefaults.appGroup
+-    
+-    lazy var healthStore = HKHealthStore()
+ 
+-    private let log = OSLog(category: "LoopWidgets")
++    /// UNA SOLA istanza per tutta l'estensione.
++    ///
++    /// Ogni istanza di questa classe si apre il suo stack CoreData sul database
++    /// condiviso (`cacheStore`) piu' un HKHealthStore. L'estensione widget gira con
++    /// un tetto di memoria bassissimo e ospita anche la Live Activity: due stack sullo
++    /// stesso file significa doppia memoria, contesa sul database e, quando il sistema
++    /// decide di chiudere il processo, la Live Activity che sparisce insieme ai widget.
++    /// Quindi i widget si passano questa, non se ne costruiscono una a testa.
++    static let shared = StatusWidgetTimelineProvider()
++
++    /// Quanto storico serve alla strisciolina del widget rettangolare. Sono ~36 letture:
++    /// abbastanza per vedere l'andamento, poco abbastanza da non pesare.
++    static let sparklineWindow = TimeInterval(hours: 3)
++
++    /// Il database e gli store, tenuti insieme e costruiti una volta sola.
++    ///
++    /// Stanno in una `static let` e non in `lazy var` di istanza per due motivi: le
++    /// `static let` in Swift si inizializzano una volta sola anche se due thread ci
++    /// arrivano insieme (le `lazy var` no), e cosi' resta comunque tutto rimandato al
++    /// primo aggiornamento vero, senza aprire il database solo perche' l'estensione e'
++    /// stata caricata per disegnare la Live Activity.
++    final class Stores {
++        let cacheStore: PersistenceController
++        let localCacheDuration: TimeInterval
++        let settingsStore: SettingsStore
++        let glucoseStore: GlucoseStore
++
++        init() {
++            let cacheStore = PersistenceController.controllerInAppGroupDirectory()
++            let localCacheDuration = Bundle.main.localCacheDuration
++            self.cacheStore = cacheStore
++            self.localCacheDuration = localCacheDuration
++            self.settingsStore = SettingsStore(store: cacheStore, expireAfter: localCacheDuration)
++            self.glucoseStore = GlucoseStore(
++                cacheStore: cacheStore,
++                provenanceIdentifier: HKSource.default().bundleIdentifier
++            )
++        }
++    }
+ 
+-    static let stalenessAge = TimeInterval(minutes: 6)
++    private static let stores = Stores()
++
++    static let sharedDefaults = UserDefaults.appGroup
+ 
+-    lazy var cacheStore = PersistenceController.controllerInAppGroupDirectory()
++    static let sharedHealthStore = HKHealthStore()
+ 
+-    lazy var localCacheDuration = Bundle.main.localCacheDuration
++    var defaults: UserDefaults? { StatusWidgetTimelineProvider.sharedDefaults }
+ 
+-    lazy var settingsStore: SettingsStore =  SettingsStore(
+-        store: cacheStore,
+-        expireAfter: localCacheDuration)
++    var healthStore: HKHealthStore { StatusWidgetTimelineProvider.sharedHealthStore }
+ 
+-    lazy var glucoseStore = GlucoseStore(
+-        cacheStore: cacheStore,
+-        provenanceIdentifier: HKSource.default().bundleIdentifier
+-    )
++    var cacheStore: PersistenceController { StatusWidgetTimelineProvider.stores.cacheStore }
++
++    var localCacheDuration: TimeInterval { StatusWidgetTimelineProvider.stores.localCacheDuration }
++
++    var settingsStore: SettingsStore { StatusWidgetTimelineProvider.stores.settingsStore }
++
++    var glucoseStore: GlucoseStore { StatusWidgetTimelineProvider.stores.glucoseStore }
++
++    private let log = OSLog(category: "LoopWidgets")
++
++    static let stalenessAge = TimeInterval(minutes: 6)
+ 
      func placeholder(in context: Context) -> StatusWidgetTimelimeEntry {
          log.default("%{public}@: context=%{public}@", #function, String(describing: context))
  
@@ -99,38 +167,75 @@ index beb8bd2f..c14df4ab 100644
      }
  
      func getSnapshot(in context: Context, completion: @escaping (StatusWidgetTimelimeEntry) -> ()) {
-@@ -166,6 +166,10 @@ class StatusWidgetTimelineProvider: TimelineProvider {
+@@ -94,9 +136,10 @@ class StatusWidgetTimelineProvider: TimelineProvider {
+         var glucose: [StoredGlucoseSample] = []
+ 
+         let startDate = Date(timeIntervalSinceNow: -LoopCoreConstants.inputDataRecencyInterval)
++        let sparklineStart = Date(timeIntervalSinceNow: -StatusWidgetTimelineProvider.sparklineWindow)
+ 
+         group.enter()
+-        glucoseStore.getGlucoseSamples(start: startDate) { (result) in
++        glucoseStore.getGlucoseSamples(start: sparklineStart) { (result) in
+             switch result {
+             case .failure:
+                 self.log.error("Failed to fetch glucose after %{public}@", String(describing: startDate))
+@@ -109,7 +152,12 @@ class StatusWidgetTimelineProvider: TimelineProvider {
+         }
+         group.wait()
+ 
+-        let finalGlucose = glucose
++        // Il grafico guarda indietro tre ore; il numero grande, il delta e la freccia
++        // continuano a guardare solo la finestra di validita' di prima. Se il sensore e'
++        // fermo da un'ora la lettura resta "---" e il delta resta vuoto, esattamente come
++        // prima: la striscia mostra lo storico, ma non fa passare per attuale un dato vecchio.
++        let sparklineGlucose = glucose
++        let finalGlucose = glucose.filter { $0.startDate >= startDate }
+ 
+         Task { @MainActor in
+             guard let defaults = self.defaults,
+@@ -166,6 +214,10 @@ class StatusWidgetTimelineProvider: TimelineProvider {
                  sensor: context.glucoseDisplay,
                  pumpHighlight: context.pumpStatusHighlightContext,
                  netBasal: netBasal,
 +                activeInsulin: context.activeInsulin,
 +                carbsOnBoard: context.carbsOnBoard,
-+                glucoseHistory: finalGlucose.suffix(36).map { $0.quantity.doubleValue(for: .milligramsPerDeciliter) },
++                glucoseHistory: sparklineGlucose.suffix(48).map { $0.quantity.doubleValue(for: .milligramsPerDeciliter) },
 +                predictedGlucose: (predictedGlucose ?? []).prefix(24).map { $0.quantity.doubleValue(for: .milligramsPerDeciliter) },
                  eventualGlucose: eventualGlucose,
                  preMealPresetAllowed: preMealPresetAllowed,
                  preMealPresetActive: preMealPresetActive,
 diff --git a/Loop/Loop Widget Extension/Widgets/SystemStatusWidget.swift b/Loop/Loop Widget Extension/Widgets/SystemStatusWidget.swift
-index 015f6c5d..1f274990 100644
+index 015f6c5d..e9caa2ea 100644
 --- a/Loop/Loop Widget Extension/Widgets/SystemStatusWidget.swift	
 +++ b/Loop/Loop Widget Extension/Widgets/SystemStatusWidget.swift	
-@@ -86,3 +86,327 @@ struct SystemStatusWidget: Widget {
+@@ -77,7 +77,7 @@ struct SystemStatusWidget: Widget {
+     let kind: String = "SystemStatusWidget"
+ 
+     var body: some WidgetConfiguration {
+-        StaticConfiguration(kind: kind, provider: StatusWidgetTimelineProvider()) { entry in
++        StaticConfiguration(kind: kind, provider: StatusWidgetTimelineProvider.shared) { entry in
+             SystemStatusWidgetEntryView(entry: entry)
+         }
+         .configurationDisplayName("Loop Status Widget")
+@@ -86,3 +86,332 @@ struct SystemStatusWidget: Widget {
          .contentMarginsDisabledIfAvailable()
      }
  }
 +
 +
-+// MARK: - Schermata di blocco
++// MARK: - Widget della schermata di blocco
++//
++// Vivono nella stessa estensione della Live Activity, quindi la regola numero uno e'
++// non pesare: nessuno stack dati in piu' (si usa `StatusWidgetTimelineProvider.shared`),
++// nessuna immagine, nessun calcolo che non sia qualche decina di somme.
 +
-+/// Sfondo per i formati accessori. Da iOS 17 il contenitore va dichiarato, altrimenti il
-+/// widget viene disegnato con margini e sfondo di sistema che non c'entrano niente.
 +extension View {
++    /// Da iOS 17 lo sfondo dei widget va dichiarato, altrimenti il sistema disegna
++    /// margini e fondo suoi che con questi formati non c'entrano niente.
 +    @ViewBuilder
 +    func accessoryWidgetBackgroundIfAvailable() -> some View {
 +        if #available(iOSApplicationExtension 17.0, *) {
-+            self.containerBackground(for: .widget) {
-+                AccessoryWidgetBackground()
-+            }
++            self.containerBackground(for: .widget) { AccessoryWidgetBackground() }
 +        } else {
 +            self
 +        }
@@ -147,7 +252,7 @@ index 015f6c5d..1f274990 100644
 +}
 +
 +@available(iOS 16.0, *)
-+enum LockScreenGlucoseFormatting {
++enum LockScreenFormatting {
 +
 +    static func glucoseString(_ entry: StatusWidgetTimelimeEntry) -> String {
 +        guard let glucose = entry.currentGlucose,
@@ -161,18 +266,16 @@ index 015f6c5d..1f274990 100644
 +        return string
 +    }
 +
-+    /// Freccia di tendenza. Sulla schermata di blocco lo spazio e' pochissimo, quindi si usa
-+    /// il glifo semplice e non la versione dentro il cerchio: a quelle dimensioni il cerchio
-+    /// diventa una macchia.
++    /// Freccia di tendenza: il glifo semplice, non quello dentro il cerchio. A queste
++    /// dimensioni il cerchio diventa una macchia.
 +    static func trendSymbol(_ entry: StatusWidgetTimelimeEntry) -> String? {
++        guard !entry.glucoseIsStale else { return nil }
 +        switch entry.sensor?.trendType {
-+        case .upUpUp: return "arrow.up"
-+        case .upUp: return "arrow.up"
++        case .upUpUp, .upUp: return "arrow.up"
 +        case .up: return "arrow.up.right"
 +        case .flat: return "arrow.right"
 +        case .down: return "arrow.down.right"
-+        case .downDown: return "arrow.down"
-+        case .downDownDown: return "arrow.down"
++        case .downDown, .downDownDown: return "arrow.down"
 +        case .none: return nil
 +        }
 +    }
@@ -186,12 +289,6 @@ index 015f6c5d..1f274990 100644
 +        return (value < 0 ? "-" : "+") + formatted
 +    }
 +
-+    static func eventualString(_ entry: StatusWidgetTimelimeEntry) -> String? {
-+        guard let eventual = entry.eventualGlucose else { return nil }
-+        let unit = eventual.unit
-+        return NumberFormatter.glucoseFormatter(for: unit).string(from: eventual.quantity.doubleValue(for: unit))
-+    }
-+
 +    static func activeInsulinString(_ entry: StatusWidgetTimelimeEntry) -> String? {
 +        guard let iob = entry.activeInsulin else { return nil }
 +        return String(format: "%.1fU", iob)
@@ -202,17 +299,23 @@ index 015f6c5d..1f274990 100644
 +        return String(format: "%.0fg", cob)
 +    }
 +
-+    /// Ora dell'ultima lettura. Senza, non si distingue un dato fermo da uno fresco.
++    /// Ora dell'ultima lettura: senza, un dato fermo e uno fresco si somigliano troppo.
 +    static func updatedString(_ entry: StatusWidgetTimelimeEntry) -> String? {
-+        guard let date = entry.glucoseFetchedAt else { return nil }
++        guard let date = entry.currentGlucose?.startDate else { return nil }
 +        let formatter = DateFormatter()
 +        formatter.dateStyle = .none
 +        formatter.timeStyle = .short
 +        return formatter.string(from: date)
 +    }
 +
-+    /// Posizione della glicemia dentro un intervallo di lettura, per riempire l'anello.
-+    /// Non e' un intervallo terapeutico: serve solo a dare un colpo d'occhio.
++    static func footerLine(_ entry: StatusWidgetTimelimeEntry) -> String {
++        [activeInsulinString(entry), carbsOnBoardString(entry), updatedString(entry)]
++            .compactMap { $0 }
++            .joined(separator: "  \u{00B7}  ")
++    }
++
++    /// Posizione della glicemia dentro l'intervallo leggibile, per riempire l'anello.
++    /// Non e' un intervallo terapeutico: serve solo al colpo d'occhio.
 +    static func gaugeFraction(_ entry: StatusWidgetTimelimeEntry) -> Double? {
 +        guard let glucose = entry.currentGlucose, !entry.glucoseIsStale else { return nil }
 +        let mgdl = glucose.quantity.doubleValue(for: .milligramsPerDeciliter)
@@ -220,38 +323,10 @@ index 015f6c5d..1f274990 100644
 +    }
 +}
 +
-+@available(iOS 16.0, *)
-+struct LockScreenCircularView: View {
-+    var entry: StatusWidgetTimelineProvider.Entry
-+
-+    var body: some View {
-+        Group {
-+            if let fraction = LockScreenGlucoseFormatting.gaugeFraction(entry) {
-+                Gauge(value: fraction) {
-+                    EmptyView()
-+                } currentValueLabel: {
-+                    Text(LockScreenGlucoseFormatting.glucoseString(entry))
-+                        .font(.system(.title3, design: .rounded).weight(.semibold))
-+                        .minimumScaleFactor(0.6)
-+                }
-+                .gaugeStyle(.accessoryCircular)
-+            } else {
-+                ZStack {
-+                    AccessoryWidgetBackground()
-+                    Text("---")
-+                        .font(.system(.title3, design: .rounded).weight(.semibold))
-+                }
-+            }
-+        }
-+        .accessoryWidgetBackgroundIfAvailable()
-+    }
-+}
-+
-+/// Linea semplice, senza assi ne' etichette: in quello spazio servirebbero a niente.
++/// Linea semplice, senza assi ne' etichette: in quello spazio non servirebbero a niente.
 +///
-+/// Prende l'intera serie - storico piu' previsione - ma ne disegna solo un tratto, cosi'
-+/// passato e futuro condividono la stessa scala e lo stesso passo orizzontale e si possono
-+/// rendere in modo diverso senza che le due linee si scollino.
++/// Riceve tutta la serie - storico piu' previsione - e ne disegna solo un tratto, cosi'
++/// passato e futuro condividono scala e passo orizzontale e non si scollano.
 +@available(iOS 16.0, *)
 +struct GlucoseSparkline: Shape {
 +    let values: [Double]
@@ -293,26 +368,81 @@ index 015f6c5d..1f274990 100644
 +    }
 +}
 +
++/// Scala e intervalli della strisciolina, tenuti fuori dalla vista perche' e' qui che si
++/// sbaglia: indici oltre la fine, divisioni per zero, giornate piatte.
++@available(iOS 16.0, *)
++struct SparklineSetup {
++    let values: [Double]
++    let pastRange: Range<Int>
++    let futureRange: Range<Int>
++    let minValue: Double
++    let maxValue: Double
++
++    init?(history: [Double], prediction: [Double]) {
++        let values = history + prediction
++        guard values.count > 2, let low = values.min(), let high = values.max() else { return nil }
++
++        // Un margine attorno ai valori: senza, una giornata piatta diventa una linea che
++        // sbatte contro i bordi e sembra drammatica.
++        let span = max(high - low, 40)
++        let mid = (high + low) / 2
++        let splitIndex = min(max(2, history.count), values.count)
++
++        self.values = values
++        self.minValue = mid - span * 0.6
++        self.maxValue = mid + span * 0.6
++        self.pastRange = 0..<splitIndex
++        self.futureRange = (splitIndex - 1)..<values.count
++    }
++}
++
++@available(iOS 16.0, *)
++struct LockScreenCircularView: View {
++    var entry: StatusWidgetTimelineProvider.Entry
++
++    var body: some View {
++        Group {
++            if let fraction = LockScreenFormatting.gaugeFraction(entry) {
++                Gauge(value: fraction) {
++                    EmptyView()
++                } currentValueLabel: {
++                    Text(LockScreenFormatting.glucoseString(entry))
++                        .font(.system(.title3, design: .rounded).weight(.semibold))
++                        .minimumScaleFactor(0.6)
++                }
++                .gaugeStyle(.accessoryCircular)
++            } else {
++                ZStack {
++                    AccessoryWidgetBackground()
++                    Text("---")
++                        .font(.system(.title3, design: .rounded).weight(.semibold))
++                }
++            }
++        }
++        .accessoryWidgetBackgroundIfAvailable()
++    }
++}
++
 +@available(iOS 16.0, *)
 +struct LockScreenRectangularView: View {
 +    var entry: StatusWidgetTimelineProvider.Entry
 +
 +    var body: some View {
-+        // Tre fasce a tutta larghezza, non elementi affiancati che si contendono lo spazio.
-+        // In 160x72 punti la lettura funziona solo se ogni banda ha un compito solo.
++        // Tre fasce a tutta larghezza, non elementi affiancati che si contendono lo spazio:
++        // in 160x72 punti si legge solo se ogni fascia ha un compito solo.
 +        VStack(alignment: .leading, spacing: 1) {
 +
 +            // 1. Quello che leggi in mezzo secondo.
 +            HStack(alignment: .firstTextBaseline, spacing: 3) {
-+                Text(LockScreenGlucoseFormatting.glucoseString(entry))
++                Text(LockScreenFormatting.glucoseString(entry))
 +                    .font(.system(size: 22, weight: .bold, design: .rounded))
 +
-+                if let symbol = LockScreenGlucoseFormatting.trendSymbol(entry) {
++                if let symbol = LockScreenFormatting.trendSymbol(entry) {
 +                    Image(systemName: symbol)
 +                        .font(.system(size: 11, weight: .bold))
 +                }
 +
-+                if let delta = LockScreenGlucoseFormatting.deltaString(entry) {
++                if let delta = LockScreenFormatting.deltaString(entry) {
 +                    Text(delta)
 +                        .font(.system(size: 11, weight: .medium))
 +                        .foregroundStyle(.secondary)
@@ -330,7 +460,7 @@ index 015f6c5d..1f274990 100644
 +
 +            // 3. Il contorno, su una riga sola. Niente icone: a dieci punti diventano
 +            //    macchie, e le unita' (U, g) dicono gia' di cosa si tratta.
-+            Text(footerLine)
++            Text(LockScreenFormatting.footerLine(entry))
 +                .font(.system(size: 10, weight: .medium))
 +                .foregroundStyle(.secondary)
 +                .lineLimit(1)
@@ -340,45 +470,24 @@ index 015f6c5d..1f274990 100644
 +        .clearWidgetBackgroundIfAvailable()
 +    }
 +
-+    private var footerLine: String {
-+        [
-+            LockScreenGlucoseFormatting.activeInsulinString(entry),
-+            LockScreenGlucoseFormatting.carbsOnBoardString(entry),
-+            LockScreenGlucoseFormatting.updatedString(entry)
-+        ]
-+        .compactMap { $0 }
-+        .joined(separator: "  \u{00B7}  ")
-+    }
-+
 +    @ViewBuilder
 +    private var sparkline: some View {
-+        let history = entry.glucoseHistory
-+        let values = history + entry.predictedGlucose
-+
-+        if values.count > 2, let low = values.min(), let high = values.max() {
-+            // Un margine attorno ai valori, altrimenti una giornata piatta diventa una
-+            // linea che sbatte contro i bordi e sembra drammatica.
-+            let span = max(high - low, 40)
-+            let mid = (high + low) / 2
-+            let minValue = mid - span * 0.6
-+            let maxValue = mid + span * 0.6
-+            let splitIndex = max(2, history.count)
-+
++        if let setup = SparklineSetup(history: entry.glucoseHistory, prediction: entry.predictedGlucose) {
 +            ZStack {
-+                // Il riempimento da' corpo alla striscia: senza, in monocromia una linea
-+                // sottile si perde sullo sfondo dello schermo di blocco.
-+                GlucoseSparkline(values: values, range: 0..<splitIndex,
-+                                 minValue: minValue, maxValue: maxValue, closed: true)
-+                    .fill(.primary.opacity(0.16))
++                // Il riempimento da' corpo alla striscia: in monocromia una linea sottile
++                // si perde sullo sfondo dello schermo di blocco.
++                GlucoseSparkline(values: setup.values, range: setup.pastRange,
++                                 minValue: setup.minValue, maxValue: setup.maxValue, closed: true)
++                    .fill(Color.primary.opacity(0.16))
 +
-+                GlucoseSparkline(values: values, range: 0..<splitIndex,
-+                                 minValue: minValue, maxValue: maxValue)
++                GlucoseSparkline(values: setup.values, range: setup.pastRange,
++                                 minValue: setup.minValue, maxValue: setup.maxValue)
 +                    .stroke(style: StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round))
 +
 +                // La previsione piu' tenue e tratteggiata: si distingue dal passato anche
 +                // quando il sistema disegna tutto dello stesso colore.
-+                GlucoseSparkline(values: values, range: (splitIndex - 1)..<values.count,
-+                                 minValue: minValue, maxValue: maxValue)
++                GlucoseSparkline(values: setup.values, range: setup.futureRange,
++                                 minValue: setup.minValue, maxValue: setup.maxValue)
 +                    .stroke(style: StrokeStyle(lineWidth: 1.4, lineCap: .round, dash: [2.5, 2.5]))
 +                    .opacity(0.55)
 +            }
@@ -392,15 +501,14 @@ index 015f6c5d..1f274990 100644
 +
 +    var body: some View {
 +        // I widget inline sono una riga sola: niente impaginazione, solo testo.
-+        // Ci sta glicemia, delta e insulina attiva, che e' il minimo per decidere qualcosa.
 +        let pieces = [
-+            LockScreenGlucoseFormatting.glucoseString(entry),
-+            LockScreenGlucoseFormatting.deltaString(entry),
-+            LockScreenGlucoseFormatting.activeInsulinString(entry)
++            LockScreenFormatting.glucoseString(entry),
++            LockScreenFormatting.deltaString(entry),
++            LockScreenFormatting.activeInsulinString(entry)
 +        ].compactMap { $0 }
 +        let text = pieces.joined(separator: "  ")
 +
-+        if let symbol = LockScreenGlucoseFormatting.trendSymbol(entry) {
++        if let symbol = LockScreenFormatting.trendSymbol(entry) {
 +            Label {
 +                Text(text)
 +            } icon: {
@@ -409,20 +517,6 @@ index 015f6c5d..1f274990 100644
 +        } else {
 +            Text(text)
 +        }
-+    }
-+}
-+
-+@available(iOS 16.0, *)
-+struct LockScreenGlucoseWidget: Widget {
-+    let kind: String = "LockScreenGlucoseWidget"
-+
-+    var body: some WidgetConfiguration {
-+        StaticConfiguration(kind: kind, provider: StatusWidgetTimelineProvider()) { entry in
-+            LockScreenWidgetEntryView(entry: entry)
-+        }
-+        .configurationDisplayName(LocalizedString("Glucose", comment: "Display name of the lock screen glucose widget"))
-+        .description(LocalizedString("Your glucose on the Lock Screen, in StandBy, and on a watch face.", comment: "Description of the lock screen glucose widget"))
-+        .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline])
 +    }
 +}
 +
@@ -440,6 +534,20 @@ index 015f6c5d..1f274990 100644
 +        default:
 +            LockScreenCircularView(entry: entry)
 +        }
++    }
++}
++
++@available(iOS 16.0, *)
++struct LockScreenGlucoseWidget: Widget {
++    let kind: String = "LockScreenGlucoseWidget"
++
++    var body: some WidgetConfiguration {
++        StaticConfiguration(kind: kind, provider: StatusWidgetTimelineProvider.shared) { entry in
++            LockScreenWidgetEntryView(entry: entry)
++        }
++        .configurationDisplayName(LocalizedString("Glucose", comment: "Display name of the lock screen glucose widget"))
++        .description(LocalizedString("Your glucose, insulin and carbs on the Lock Screen.", comment: "Description of the lock screen glucose widget"))
++        .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline])
 +    }
 +}
 diff --git a/Loop/Loop.xcodeproj/project.pbxproj b/Loop/Loop.xcodeproj/project.pbxproj
