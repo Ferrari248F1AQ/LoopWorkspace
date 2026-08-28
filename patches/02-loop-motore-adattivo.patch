@@ -2095,6 +2095,31 @@ index 9261dcfc..c8e2789a 100644
              
              completionHandler(context)
          }
+diff --git a/Loop/Loop/Managers/Live Activity/LiveActivityManager.swift b/Loop/Loop/Managers/Live Activity/LiveActivityManager.swift
+index f7a4723f..e27c199f 100644
+--- a/Loop/Loop/Managers/Live Activity/LiveActivityManager.swift	
++++ b/Loop/Loop/Managers/Live Activity/LiveActivityManager.swift	
+@@ -268,7 +268,19 @@ class LiveActivityManager : LiveActivityManagerProxy {
+         for unknownActivity in Activity<GlucoseActivityAttributes>.activities {
+             await unknownActivity.end(nil, dismissalPolicy: .immediate)
+         }
+-        
++        self.activity = nil
++
++        // Senza attivita' da cui copiare lo stato non c'era niente da ricreare, e si usciva
++        // lasciando activity a nil. Ma needsRecreation() con activity nil cade nel ramo
++        // default e risponde "ricrea": al giro dopo si rientra qui, si trova di nuovo nil,
++        // e non si ricrea di nuovo. La Live Activity spariva e non tornava piu' da sola.
++        // Succede tipicamente dopo un aggiornamento dell'app, che uccide quella in corso.
++        guard dynamicState != nil else {
++            initEmptyActivity(settings: self.settings)
++            self.startDate = Date.now
++            return
++        }
++
+         do {
+             if let dynamicState = dynamicState {
+                 self.activity = try Activity.request(
 diff --git a/Loop/Loop/Managers/LoopDataManager.swift b/Loop/Loop/Managers/LoopDataManager.swift
 index c9aef285..4c5e4b95 100644
 --- a/Loop/Loop/Managers/LoopDataManager.swift
