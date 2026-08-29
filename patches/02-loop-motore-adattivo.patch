@@ -1,25 +1,3 @@
-diff --git a/Loop/Loop Widget Extension/LoopWidgets.swift b/Loop/Loop Widget Extension/LoopWidgets.swift
-index f87c2b89..60a4e794 100644
---- a/Loop/Loop Widget Extension/LoopWidgets.swift	
-+++ b/Loop/Loop Widget Extension/LoopWidgets.swift	
-@@ -13,11 +13,15 @@ struct LoopWidgets: WidgetBundle {
- 
-     @WidgetBundleBuilder
-     var body: some Widget {
-+        // La Live Activity per prima: e' quella che si guarda tutto il giorno.
-+        if #available(iOS 16.2, *) {
-+            GlucoseLiveActivityConfiguration()
-+        }
-         if #available(iOS 16.1, *) {
-             SystemStatusWidget()
-         }
--        if #available(iOS 16.2, *) {
--            GlucoseLiveActivityConfiguration()
-+        if #available(iOS 16.0, *) {
-+            LockScreenGlucoseWidget()
-         }
-     }
- }
 diff --git a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift
 index 45271bbe..cbf01979 100644
 --- a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift	
@@ -36,27 +14,10 @@ index 45271bbe..cbf01979 100644
      let eventualGlucose: GlucoseContext?
      
 diff --git a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift
-index beb8bd2f..471b5862 100644
+index beb8bd2f..7facf5f1 100644
 --- a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift	
 +++ b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelineProvider.swift	
-@@ -13,6 +13,16 @@ import OSLog
- import WidgetKit
- 
- class StatusWidgetTimelineProvider: TimelineProvider {
-+
-+    /// UNA SOLA istanza per tutta l'estensione widget.
-+    ///
-+    /// Ogni istanza di questa classe apre per conto suo il database condiviso di Loop
-+    /// piu' un accesso a Salute. L'estensione gira in una trentina di megabyte e ospita
-+    /// anche la Live Activity: due widget con due istanze significa due database aperti
-+    /// sullo stesso file, e quando iOS chiude il processo per eccesso di memoria sparisce
-+    /// tutto, Live Activity compresa. Quindi i widget si passano questa.
-+    static let shared = StatusWidgetTimelineProvider()
-+
-     lazy var defaults = UserDefaults.appGroup
-     
-     lazy var healthStore = HKHealthStore()
-@@ -37,7 +47,7 @@ class StatusWidgetTimelineProvider: TimelineProvider {
+@@ -37,7 +37,7 @@ class StatusWidgetTimelineProvider: TimelineProvider {
      func placeholder(in context: Context) -> StatusWidgetTimelimeEntry {
          log.default("%{public}@: context=%{public}@", #function, String(describing: context))
  
@@ -65,7 +26,7 @@ index beb8bd2f..471b5862 100644
      }
  
      func getSnapshot(in context: Context, completion: @escaping (StatusWidgetTimelimeEntry) -> ()) {
-@@ -166,6 +176,7 @@ class StatusWidgetTimelineProvider: TimelineProvider {
+@@ -166,6 +166,7 @@ class StatusWidgetTimelineProvider: TimelineProvider {
                  sensor: context.glucoseDisplay,
                  pumpHighlight: context.pumpStatusHighlightContext,
                  netBasal: netBasal,
@@ -74,19 +35,36 @@ index beb8bd2f..471b5862 100644
                  preMealPresetAllowed: preMealPresetAllowed,
                  preMealPresetActive: preMealPresetActive,
 diff --git a/Loop/Loop Widget Extension/Widgets/SystemStatusWidget.swift b/Loop/Loop Widget Extension/Widgets/SystemStatusWidget.swift
-index 015f6c5d..6f641952 100644
+index 015f6c5d..70bfb6b6 100644
 --- a/Loop/Loop Widget Extension/Widgets/SystemStatusWidget.swift	
 +++ b/Loop/Loop Widget Extension/Widgets/SystemStatusWidget.swift	
-@@ -77,7 +77,7 @@ struct SystemStatusWidget: Widget {
-     let kind: String = "SystemStatusWidget"
+@@ -19,6 +19,19 @@ struct SystemStatusWidgetEntryView : View {
+     var entry: StatusWidgetTimelineProvider.Entry
  
-     var body: some WidgetConfiguration {
--        StaticConfiguration(kind: kind, provider: StatusWidgetTimelineProvider()) { entry in
-+        StaticConfiguration(kind: kind, provider: StatusWidgetTimelineProvider.shared) { entry in
-             SystemStatusWidgetEntryView(entry: entry)
+     var body: some View {
++        // I formati "accessory" sono quelli della schermata di blocco, e li serve questo
++        // stesso widget, gia' dichiarato. Cosi' l'elenco dei widget dell'estensione resta
++        // identico all'originale - ed e' quell'elenco che iOS legge anche per trovare la
++        // Live Activity.
++        switch widgetFamily {
++        case .accessoryCircular, .accessoryRectangular, .accessoryInline:
++            LockScreenWidgetEntryView(entry: entry)
++        default:
++            homeScreenView
++        }
++    }
++
++    private var homeScreenView: some View {
+         HStack(alignment: .center, spacing: 5) {
+             VStack(alignment: .center, spacing: 5) {
+                 HStack(alignment: .center, spacing: 15) {
+@@ -82,7 +95,251 @@ struct SystemStatusWidget: Widget {
          }
          .configurationDisplayName("Loop Status Widget")
-@@ -86,3 +86,260 @@ struct SystemStatusWidget: Widget {
+         .description("See your current blood glucose and insulin delivery.")
+-        .supportedFamilies([.systemSmall, .systemMedium])
++        .supportedFamilies([.systemSmall, .systemMedium,
++                            .accessoryCircular, .accessoryRectangular, .accessoryInline])
          .contentMarginsDisabledIfAvailable()
      }
  }
@@ -331,20 +309,6 @@ index 015f6c5d..6f641952 100644
 +        default:
 +            LockScreenCircularView(entry: entry)
 +        }
-+    }
-+}
-+
-+@available(iOS 16.0, *)
-+struct LockScreenGlucoseWidget: Widget {
-+    let kind: String = "LockScreenGlucoseWidget"
-+
-+    var body: some WidgetConfiguration {
-+        StaticConfiguration(kind: kind, provider: StatusWidgetTimelineProvider.shared) { entry in
-+            LockScreenWidgetEntryView(entry: entry)
-+        }
-+        .configurationDisplayName(LocalizedString("Glucose", comment: "Display name of the lock screen glucose widget"))
-+        .description(LocalizedString("Your glucose on the Lock Screen.", comment: "Description of the lock screen glucose widget"))
-+        .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline])
 +    }
 +}
 diff --git a/Loop/Loop.xcodeproj/project.pbxproj b/Loop/Loop.xcodeproj/project.pbxproj
