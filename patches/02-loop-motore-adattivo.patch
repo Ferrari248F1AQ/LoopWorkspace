@@ -1,3 +1,375 @@
+diff --git a/Loop/Loop Widget Extension/Live Activity/GlucoseLiveActivityConfiguration.swift b/Loop/Loop Widget Extension/Live Activity/GlucoseLiveActivityConfiguration.swift
+index b288c714..b44610fc 100644
+--- a/Loop/Loop Widget Extension/Live Activity/GlucoseLiveActivityConfiguration.swift	
++++ b/Loop/Loop Widget Extension/Live Activity/GlucoseLiveActivityConfiguration.swift	
+@@ -88,92 +88,29 @@ struct GlucoseLiveActivityConfiguration: Widget {
+     private func fullLockScreenView(
+         context: ActivityViewContext<GlucoseActivityAttributes>
+     ) -> some View {
++        // Impaginazione: il numero comanda, il grafico prende tutto lo spazio che resta,
++        // il contorno sta su una riga sola. Prima erano quattro celle di uguale peso in
++        // fondo, con la glicemia - l'unico motivo per cui si guarda questa cosa - larga
++        // come le altre e alta la meta' di quanto potrebbe.
+         ZStack {
+-            VStack {
+-                if context.attributes.mode == .large {
+-                    HStack(spacing: 15) {
+-                        loopIcon(context)
+-                        if context.attributes.addPredictiveLine {
+-                            ChartView(
+-                                glucoseSamples: context.state.glucoseSamples,
+-                                predicatedGlucose: context.state
+-                                    .predicatedGlucose,
+-                                predicatedStartDate: context.state
+-                                    .predicatedStartDate,
+-                                predicatedInterval: context.state
+-                                    .predicatedInterval,
+-                                useLimits: context.attributes.useLimits,
+-                                lowerLimit: context.state.isMmol
+-                                ? context.attributes.lowerLimitChartMmol
+-                                : context.attributes.lowerLimitChartMg,
+-                                upperLimit: context.state.isMmol
+-                                ? context.attributes.upperLimitChartMmol
+-                                : context.attributes.upperLimitChartMg,
+-                                glucoseRanges: context.state.glucoseRanges,
+-                                preset: context.state.preset,
+-                                yAxisMarks: context.state.yAxisMarks
+-                            )
+-                            .frame(height: 85)
+-                        } else {
+-                            ChartView(
+-                                glucoseSamples: context.state.glucoseSamples,
+-                                useLimits: context.attributes.useLimits,
+-                                lowerLimit: context.state.isMmol
+-                                ? context.attributes.lowerLimitChartMmol
+-                                : context.attributes.lowerLimitChartMg,
+-                                upperLimit: context.state.isMmol
+-                                ? context.attributes.upperLimitChartMmol
+-                                : context.attributes.upperLimitChartMg,
+-                                glucoseRanges: context.state.glucoseRanges,
+-                                preset: context.state.preset,
+-                                yAxisMarks: context.state.yAxisMarks
+-                            )
+-                            .frame(height: 85)
+-                        }
++            VStack(alignment: .leading, spacing: 7) {
++                HStack(alignment: .center, spacing: 12) {
++                    VStack(alignment: .leading, spacing: 2) {
++                        heroReadout(context, size: 42)
++                        loopAgeLine(context)
++                            .padding(.top, 3)
+                     }
+-                }
+-                
+-                HStack {
+-                    bottomSpacer(border: false)
+-                    
+-                    let endIndex = context.state.bottomRow.endIndex - 1
+-                    ForEach(
+-                        Array(context.state.bottomRow.enumerated()),
+-                        id: \.element
+-                    ) { (index, item) in
+-                        switch item.type {
+-                        case .generic:
+-                            bottomItemGeneric(
+-                                title: item.label,
+-                                value: item.value,
+-                                unit: LocalizedString(
+-                                    item.unit,
+-                                    comment: "No comment"
+-                                )
+-                            )
+-                            
+-                        case .basal:
+-                            BasalViewActivity(
+-                                percent: item.percentage,
+-                                rate: item.rate
+-                            )
+-                            
+-                        case .currentBg:
+-                            bottomItemCurrentBG(
+-                                value: item.value,
+-                                trend: item.trend,
+-                                context: context
+-                            )
+-                        }
+-                        
+-                        if index != endIndex {
+-                            bottomSpacer(border: true)
+-                        }
++                    .fixedSize(horizontal: true, vertical: false)
++
++                    if context.attributes.mode == .large {
++                        chart(context, height: 92)
+                     }
+-                    
+-                    bottomSpacer(border: false)
+                 }
++
++                detailStrip(context)
+             }
++            .frame(maxWidth: .infinity, alignment: .leading)
++
+             if context.state.ended {
+                 VStack {
+                     Spacer()
+@@ -199,6 +136,168 @@ struct GlucoseLiveActivityConfiguration: Widget {
+         .activityBackgroundTint(Color.clear)
+     }
+ 
++    // MARK: - Pezzi condivisi fra schermata di blocco e isola
++
++    /// Il numero, la freccia, e sotto le due cose che dicono se e' una buona notizia:
++    /// di quanto si e' mosso e dove sta andando.
++    @ViewBuilder
++    private func heroReadout(
++        _ context: ActivityViewContext<GlucoseActivityAttributes>,
++        size: CGFloat
++    ) -> some View {
++        let formatter = NumberFormatter.glucoseFormatter(
++            for: context.state.isMmol
++                ? HKUnit.millimolesPerLiter : HKUnit.milligramsPerDeciliter
++        )
++        let value = formatter.string(from: context.state.currentGlucose) ?? "??"
++        let color = getGlucoseColor(context: context)
++
++        VStack(alignment: .leading, spacing: 0) {
++            HStack(alignment: .firstTextBaseline, spacing: 3) {
++                Text(value)
++                    .font(.system(size: size, weight: .heavy, design: .rounded))
++                    .foregroundStyle(color)
++                Text(getArrowImage(context.state.trendType))
++                    .font(.system(size: size * 0.44, weight: .bold))
++                    .foregroundStyle(color)
++            }
++            .lineLimit(1)
++            .minimumScaleFactor(0.7)
++
++            Text(qualifierLine(context, formatter: formatter))
++                .font(.system(size: max(11, size * 0.29), weight: .medium))
++                .foregroundStyle(.secondary)
++                .lineLimit(1)
++                .minimumScaleFactor(0.8)
++        }
++    }
++
++    /// "+3  ·  \u{21AA} 132". La previsione era disegnata nel grafico ma non scritta da
++    /// nessuna parte, e leggere una cifra costa meno che stimare a occhio dove finisce
++    /// una linea.
++    private func qualifierLine(
++        _ context: ActivityViewContext<GlucoseActivityAttributes>,
++        formatter: NumberFormatter
++    ) -> String {
++        // Se il delta manca si salta, altrimenti la riga comincia con un separatore
++        // sospeso nel vuoto.
++        var pieces = [context.state.delta].filter { !$0.isEmpty }
++        if let eventual = context.state.eventualGlucose,
++           let text = formatter.string(from: NSNumber(value: eventual))
++        {
++            pieces.append("\u{21AA} " + text)
++        }
++        return pieces.joined(separator: "  \u{00B7}  ")
++    }
++
++    /// Il cerchio del loop a 13 punti accanto a da quanto tempo ha chiuso. Prima occupava
++    /// 36 punti di larghezza accanto al grafico senza dire quel numero, che pero' e'
++    /// esattamente cio' che si cerca guardandolo.
++    @ViewBuilder
++    private func loopAgeLine(
++        _ context: ActivityViewContext<GlucoseActivityAttributes>
++    ) -> some View {
++        HStack(spacing: 5) {
++            loopIcon(context, size: 13)
++            if let completed = context.state.lastCompleted {
++                Text(completed, style: .relative)
++                    .font(.caption2)
++                    .foregroundStyle(.secondary)
++                    .lineLimit(1)
++            }
++        }
++    }
++
++    /// Il contorno su una riga sola: gli stessi valori che hai scelto nelle impostazioni,
++    /// nello stesso ordine. La glicemia corrente non si ripete, perche' e' gia' il numero
++    /// grande qui sopra.
++    @ViewBuilder
++    private func detailStrip(
++        _ context: ActivityViewContext<GlucoseActivityAttributes>
++    ) -> some View {
++        let items = context.state.bottomRow.filter { $0.type != .currentBg }
++        if !items.isEmpty {
++            let endIndex = items.endIndex - 1
++            HStack(spacing: 0) {
++                ForEach(Array(items.enumerated()), id: \.element) { (index, item) in
++                    Text(detailLabel(item))
++                        .font(.caption2)
++                        .foregroundStyle(.secondary)
++                    Text(" " + detailValue(item))
++                        .font(.caption)
++                        .fontWeight(.semibold)
++                    if index != endIndex {
++                        Text("   ")
++                            .font(.caption2)
++                    }
++                }
++                Spacer(minLength: 0)
++            }
++            .lineLimit(1)
++            .minimumScaleFactor(0.75)
++        }
++    }
++
++    private func detailLabel(_ item: BottomRowItem) -> String {
++        switch item.type {
++        case .basal:
++            return NSLocalizedString("Basal", comment: "Label for the basal rate in the Live Activity detail line")
++        default:
++            return item.label
++        }
++    }
++
++    private func detailValue(_ item: BottomRowItem) -> String {
++        switch item.type {
++        case .basal:
++            return String(format: "%.2f U/h", item.rate)
++        default:
++            return item.value + LocalizedString(item.unit, comment: "No comment")
++        }
++    }
++
++    /// Il grafico, con o senza previsione a seconda dell'impostazione. Estratto qui perche'
++    /// prima era ricopiato quattro volte fra schermata di blocco e isola.
++    @ViewBuilder
++    private func chart(
++        _ context: ActivityViewContext<GlucoseActivityAttributes>,
++        height: CGFloat
++    ) -> some View {
++        let lower = context.state.isMmol
++            ? context.attributes.lowerLimitChartMmol
++            : context.attributes.lowerLimitChartMg
++        let upper = context.state.isMmol
++            ? context.attributes.upperLimitChartMmol
++            : context.attributes.upperLimitChartMg
++
++        if context.attributes.addPredictiveLine {
++            ChartView(
++                glucoseSamples: context.state.glucoseSamples,
++                predicatedGlucose: context.state.predicatedGlucose,
++                predicatedStartDate: context.state.predicatedStartDate,
++                predicatedInterval: context.state.predicatedInterval,
++                useLimits: context.attributes.useLimits,
++                lowerLimit: lower,
++                upperLimit: upper,
++                glucoseRanges: context.state.glucoseRanges,
++                preset: context.state.preset,
++                yAxisMarks: context.state.yAxisMarks
++            )
++            .frame(height: height)
++        } else {
++            ChartView(
++                glucoseSamples: context.state.glucoseSamples,
++                useLimits: context.attributes.useLimits,
++                lowerLimit: lower,
++                upperLimit: upper,
++                glucoseRanges: context.state.glucoseRanges,
++                preset: context.state.preset,
++                yAxisMarks: context.state.yAxisMarks
++            )
++            .frame(height: height)
++        }
++    }
++
+     @ViewBuilder
+     private func compactLockScreenView(
+         context: ActivityViewContext<GlucoseActivityAttributes>
+@@ -267,68 +366,33 @@ struct GlucoseLiveActivityConfiguration: Widget {
+         )
+ 
+         return DynamicIsland {
++            // Stessa gerarchia della schermata di blocco: aprendo l'isola non si deve
++            // reimparare dove guardare.
+             DynamicIslandExpandedRegion(.leading) {
+-                HStack(alignment: .center) {
+-                    loopIcon(context)
+-                        .frame(width: 40, height: 40, alignment: .trailing)
+-                    Spacer()
+-                    Text(
+-                        "\(glucoseFormatter.string(from: context.state.currentGlucose) ?? "??")\(getArrowImage(context.state.trendType))"
+-                    )
+-                    .foregroundStyle(getGlucoseColor(context: context))
+-                    .font(.headline)
+-                    .fontWeight(.heavy)
+-                }
++                heroReadout(context, size: 30)
++                    .padding(.leading, 4)
+             }
+             DynamicIslandExpandedRegion(.trailing) {
+-                HStack {
+-                    Text(context.state.delta)
+-                        .foregroundStyle(Color(white: 0.9))
+-                        .font(.headline)
++                VStack(alignment: .trailing, spacing: 0) {
+                     Text(
+-                        context.state.isMmol
+-                            ? HKUnit.millimolesPerLiter.localizedShortUnitString
+-                            : HKUnit.milligramsPerDeciliter
+-                                .localizedShortUnitString
++                        formatEventualBG(
++                            value: context.state.eventualGlucose,
++                            formatter: glucoseFormatter
++                        )
+                     )
+-                    .foregroundStyle(Color(white: 0.7))
+-                    .font(.subheadline)
++                    .font(.headline)
++                    Text(NSLocalizedString("eventual", comment: "Label under the forecast value in the Dynamic Island"))
++                        .font(.caption2)
++                        .foregroundStyle(.secondary)
+                 }
++                .padding(.trailing, 4)
+             }
+             DynamicIslandExpandedRegion(.bottom) {
+-                if context.attributes.addPredictiveLine {
+-                    ChartView(
+-                        glucoseSamples: context.state.glucoseSamples,
+-                        predicatedGlucose: context.state.predicatedGlucose,
+-                        predicatedStartDate: context.state.predicatedStartDate,
+-                        predicatedInterval: context.state.predicatedInterval,
+-                        useLimits: context.attributes.useLimits,
+-                        lowerLimit: context.state.isMmol
+-                            ? context.attributes.lowerLimitChartMmol
+-                            : context.attributes.lowerLimitChartMg,
+-                        upperLimit: context.state.isMmol
+-                            ? context.attributes.upperLimitChartMmol
+-                            : context.attributes.upperLimitChartMg,
+-                        glucoseRanges: context.state.glucoseRanges,
+-                        preset: context.state.preset,
+-                        yAxisMarks: context.state.yAxisMarks
+-                    )
+-                    .frame(height: 75)
+-                } else {
+-                    ChartView(
+-                        glucoseSamples: context.state.glucoseSamples,
+-                        useLimits: context.attributes.useLimits,
+-                        lowerLimit: context.state.isMmol
+-                            ? context.attributes.lowerLimitChartMmol
+-                            : context.attributes.lowerLimitChartMg,
+-                        upperLimit: context.state.isMmol
+-                            ? context.attributes.upperLimitChartMmol
+-                            : context.attributes.upperLimitChartMg,
+-                        glucoseRanges: context.state.glucoseRanges,
+-                        preset: context.state.preset,
+-                        yAxisMarks: context.state.yAxisMarks
+-                    )
+-                    .frame(height: 75)
++                VStack(alignment: .leading, spacing: 5) {
++                    chart(context, height: 68)
++                    // Insulina attiva, carboidrati e basale nell'isola non c'erano
++                    // proprio: per vederli bisognava aprire l'app.
++                    detailStrip(context)
+                 }
+             }
+         } compactLeading: {
 diff --git a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift b/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift
 index 45271bbe..cbf01979 100644
 --- a/Loop/Loop Widget Extension/Timeline/StatusWidgetTimelimeEntry.swift	
