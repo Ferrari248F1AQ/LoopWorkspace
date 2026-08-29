@@ -364,10 +364,10 @@ index 005d0e00..fb7e89b0 100644
  				A9DCF32A25B0FABF00C89088 /* LoopUIColorPalette+Default.swift in Sources */,
 diff --git a/Loop/Loop/Managers/AdaptiveTherapyManager.swift b/Loop/Loop/Managers/AdaptiveTherapyManager.swift
 new file mode 100644
-index 00000000..9fd964c0
+index 00000000..fb88271a
 --- /dev/null
 +++ b/Loop/Loop/Managers/AdaptiveTherapyManager.swift
-@@ -0,0 +1,1281 @@
+@@ -0,0 +1,1314 @@
 +//
 +//  AdaptiveTherapyManager.swift
 +//  Loop
@@ -573,7 +573,7 @@ index 00000000..9fd964c0
 +                                         slots: [], totalBins: 0, effectiveBins: 0,
 +                                         exclusionCounts: [:], saturatedMeals: [],
 +                                         carbRatio: nil, mealAssessments: nil,
-+                                         inconclusiveReason: "Impostazioni terapeutiche non disponibili")
++                                         inconclusiveReason: NSLocalizedString("Therapy settings are not available.", comment: "Adaptive therapy inconclusive reason"))
 +        }
 +
 +        let windowEnd = now
@@ -609,7 +609,7 @@ index 00000000..9fd964c0
 +                                             slots: [], totalBins: 0, effectiveBins: 0,
 +                                             exclusionCounts: [:], saturatedMeals: [],
 +                                             carbRatio: nil, mealAssessments: nil,
-+                                             inconclusiveReason: "Rapporto carboidrati non configurato: impossibile ricostruire lo storico esterno")
++                                             inconclusiveReason: NSLocalizedString("No carb ratio is configured, so the external history cannot be rebuilt.", comment: "Adaptive therapy inconclusive reason"))
 +            }
 +            series = built
 +            carbEntries = data.carbEntries
@@ -625,7 +625,7 @@ index 00000000..9fd964c0
 +                                         slots: [], totalBins: 0, effectiveBins: 0,
 +                                         exclusionCounts: [:], saturatedMeals: [],
 +                                         carbRatio: nil, mealAssessments: nil,
-+                                         inconclusiveReason: "Storico glicemico insufficiente, anche dopo aver provato la fonte esterna")
++                                         inconclusiveReason: NSLocalizedString("Not enough glucose history, even after trying the external source.", comment: "Adaptive therapy inconclusive reason"))
 +        }
 +
 +        let glucose = series.glucose
@@ -693,7 +693,7 @@ index 00000000..9fd964c0
 +            saturatedMeals: saturatedMeals,
 +            carbRatio: carbRatioRecommendation,
 +            mealAssessments: mealAssessments,
-+            inconclusiveReason: slots.contains(where: { $0.isActionable }) ? nil : "Nessuna fascia con dati sufficienti"
++            inconclusiveReason: slots.contains(where: { $0.isActionable }) ? nil : NSLocalizedString("No time slot produced a usable figure. The breakdown below says why.", comment: "Adaptive therapy inconclusive reason")
 +        )
 +
 +        return report
@@ -1141,7 +1141,8 @@ index 00000000..9fd964c0
 +            let scheduledBasal = inputs.basalSchedule.value(at: slotDate)
 +
 +            guard !slotBins.isEmpty, isf > 0, scheduledBasal > 0 else {
-+                results.append(neutralSlot(slot, notes: ["nessun dato utilizzabile in questa fascia"]))
++                results.append(neutralSlot(slot, outcome: .noData,
++                                           notes: [NSLocalizedString("no readable data in this slot", comment: "Adaptive slot note")]))
 +                continue
 +            }
 +
@@ -1158,19 +1159,20 @@ index 00000000..9fd964c0
 +            let dispersion = weightedMedian(values: values.map { abs($0 - center) }, weights: weights)
 +
 +            guard effectiveSamples >= configuration.minimumEffectiveSamples else {
-+                results.append(neutralSlot(slot,
++                results.append(neutralSlot(slot, outcome: .tooFewSamples,
 +                                           effectiveSamples: effectiveSamples,
 +                                           dispersion: dispersion,
-+                                           notes: [String(format: "campione efficace %.1f, sotto la soglia di %.0f",
++                                           notes: [String(format: NSLocalizedString("effective sample %.1f, below the %.0f needed", comment: "Adaptive slot note"),
 +                                                          effectiveSamples, configuration.minimumEffectiveSamples)]))
 +                continue
 +            }
 +
 +            guard dispersion <= configuration.maximumDispersion else {
-+                results.append(neutralSlot(slot,
++                results.append(neutralSlot(slot, outcome: .tooDispersed,
 +                                           effectiveSamples: effectiveSamples,
 +                                           dispersion: dispersion,
-+                                           notes: [String(format: "dispersione %.1f mg/dL/h: segnale non riproducibile", dispersion)]))
++                                           notes: [String(format: NSLocalizedString("spread %.1f mg/dL/h, above the %.0f allowed", comment: "Adaptive slot note"),
++                                                          dispersion, configuration.maximumDispersion)]))
 +                continue
 +            }
 +
@@ -1178,10 +1180,10 @@ index 00000000..9fd964c0
 +            let threshold = max(3 * dispersion, 5.0)
 +            let kept = slotBins.filter { abs($0.counteractionPerHour - center) <= threshold }
 +            guard kept.count >= 3 else {
-+                results.append(neutralSlot(slot,
++                results.append(neutralSlot(slot, outcome: .tooManyOutliers,
 +                                           effectiveSamples: effectiveSamples,
 +                                           dispersion: dispersion,
-+                                           notes: ["troppi valori anomali nella fascia"]))
++                                           notes: [NSLocalizedString("too many outliers in this slot", comment: "Adaptive slot note")]))
 +                continue
 +            }
 +
@@ -1222,6 +1224,9 @@ index 00000000..9fd964c0
 +                effectiveSamples: effectiveSamples,
 +                dispersion: dispersion,
 +                isActionable: true,
++                outcome: .ok,
++                rawBasalMultiplier: basalMultiplier,
++                rawInsulinSensitivityMultiplier: isfMultiplier,
 +                notes: []
 +            ))
 +        }
@@ -1230,6 +1235,7 @@ index 00000000..9fd964c0
 +    }
 +
 +    func neutralSlot(_ slot: Int,
++                     outcome: AdaptiveSlotOutcome,
 +                     effectiveSamples: Double = 0,
 +                     dispersion: Double = 0,
 +                     notes: [String]) -> AdaptiveSlotRecommendation
@@ -1240,6 +1246,7 @@ index 00000000..9fd964c0
 +                                   effectiveSamples: effectiveSamples,
 +                                   dispersion: dispersion,
 +                                   isActionable: false,
++                                   outcome: outcome,
 +                                   notes: notes)
 +    }
 +
@@ -1321,6 +1328,9 @@ index 00000000..9fd964c0
 +                                              effectiveSamples: slot.effectiveSamples,
 +                                              dispersion: slot.dispersion,
 +                                              isActionable: true,
++                                              outcome: slot.outcome,
++                                              rawBasalMultiplier: slot.rawBasalMultiplier,
++                                              rawInsulinSensitivityMultiplier: slot.rawInsulinSensitivityMultiplier,
 +                                              notes: slot.notes)
 +        }
 +    }
@@ -1351,6 +1361,9 @@ index 00000000..9fd964c0
 +                                              effectiveSamples: slot.effectiveSamples,
 +                                              dispersion: slot.dispersion,
 +                                              isActionable: true,
++                                              outcome: slot.outcome,
++                                              rawBasalMultiplier: slot.rawBasalMultiplier,
++                                              rawInsulinSensitivityMultiplier: slot.rawInsulinSensitivityMultiplier,
 +                                              notes: slot.notes)
 +        }
 +
@@ -1561,7 +1574,8 @@ index 00000000..9fd964c0
 +            // Salita maggiore dell'attesa vuol dire che serviva piu' insulina per grammo,
 +            // cioe' un rapporto piu' piccolo. Il moltiplicatore e' quindi l'inverso.
 +            guard ratio > 0.01 else { continue }
-+            let multiplier = clampMultiplier(1 / ratio)
++            let rawMultiplier = 1 / ratio
++            let multiplier = clampMultiplier(rawMultiplier)
 +
 +            // Peso: i pasti grandi hanno un rapporto segnale/rumore migliore, e la copertura
 +            // CGM entra direttamente.
@@ -1578,6 +1592,7 @@ index 00000000..9fd964c0
 +                observedRise: observedRise,
 +                modeledRise: modeledRise,
 +                multiplier: multiplier,
++                rawMultiplier: rawMultiplier,
 +                weight: weight,
 +                podDay: podDay
 +            ))
@@ -1591,7 +1606,7 @@ index 00000000..9fd964c0
 +        guard !usable.isEmpty else {
 +            return AdaptiveCarbRatioRecommendation(multiplier: 1, effectiveMeals: 0, dispersion: 0,
 +                                                   isActionable: false,
-+                                                   notes: ["nessun pasto isolato e completo nella finestra"],
++                                                   notes: [NSLocalizedString("no isolated, fully covered meal in the window", comment: "Adaptive carb ratio note")],
 +                                                   byPodDay: nil)
 +        }
 +
@@ -1605,18 +1620,34 @@ index 00000000..9fd964c0
 +        let center = weightedMedian(values: values, weights: weights)
 +        let dispersion = weightedMedian(values: values.map { abs($0 - center) }, weights: weights)
 +
++        // La stessa mediana sui valori NON tagliati, e quanti pasti sono finiti contro il
++        // limite. Se quasi tutti ci sono finiti, il numero mostrato e' il limite, non una
++        // misura, e dirlo e' l'unica cosa onesta da fare.
++        let rawValues = usable.map { $0.rawMultiplier ?? $0.multiplier }
++        let rawCenter = weightedMedian(values: rawValues, weights: weights)
++        let atLimit = rawValues.filter {
++            $0 <= configuration.minimumMultiplier + 1e-9 || $0 >= configuration.maximumMultiplier - 1e-9
++        }.count
++        let clampedShare = usable.isEmpty ? 0 : Double(atLimit) / Double(usable.count)
++
 +        var notes: [String] = []
 +        var actionable = true
 +
 +        if effectiveMeals < configuration.minimumEffectiveMeals {
 +            actionable = false
-+            notes.append(String(format: "solo %.1f pasti utilizzabili, ne servono %.0f",
++            notes.append(String(format: NSLocalizedString("only %.1f usable meals, %.0f needed", comment: "Adaptive carb ratio note"),
 +                                effectiveMeals, configuration.minimumEffectiveMeals))
 +        }
 +
 +        if dispersion > configuration.maximumMealDispersion {
 +            actionable = false
-+            notes.append(String(format: "dispersione %.0f%%: i pasti non si somigliano abbastanza", dispersion * 100))
++            notes.append(String(format: NSLocalizedString("spread %.0f%%: the meals do not agree with each other", comment: "Adaptive carb ratio note"), dispersion * 100))
++        }
++
++        if clampedShare > 0.5 {
++            actionable = false
++            notes.append(String(format: NSLocalizedString("%.0f%% of meals hit the safety limit: the raw estimate is %+.0f%%, which is too far out to be a therapy figure. Most likely the rise is being credited to the meal when part of it comes from elsewhere.", comment: "Adaptive carb ratio note"),
++                                clampedShare * 100, (rawCenter - 1) * 100))
 +        }
 +
 +        // Raggruppamento per eta' del pod: se l'effetto cambia col giorno del sito, si vede qui.
@@ -1631,7 +1662,7 @@ index 00000000..9fd964c0
 +            }
 +            var summary: [String: Double] = [:]
 +            for (key, meals) in buckets where meals.count >= 2 {
-+                summary[key] = weightedMedian(values: meals.map { $0.multiplier },
++                summary[key] = weightedMedian(values: meals.map { $0.rawMultiplier ?? $0.multiplier },
 +                                              weights: meals.map { $0.weight })
 +            }
 +            if summary.count >= 2 {
@@ -1644,6 +1675,8 @@ index 00000000..9fd964c0
 +            effectiveMeals: effectiveMeals,
 +            dispersion: dispersion,
 +            isActionable: actionable,
++            rawMultiplier: rawCenter,
++            clampedShare: clampedShare,
 +            notes: notes,
 +            byPodDay: byPodDay
 +        )
@@ -1651,10 +1684,10 @@ index 00000000..9fd964c0
 +}
 diff --git a/Loop/Loop/Managers/AdaptiveTherapyModels.swift b/Loop/Loop/Managers/AdaptiveTherapyModels.swift
 new file mode 100644
-index 00000000..493b8d54
+index 00000000..24484c0a
 --- /dev/null
 +++ b/Loop/Loop/Managers/AdaptiveTherapyModels.swift
-@@ -0,0 +1,277 @@
+@@ -0,0 +1,336 @@
 +//
 +//  AdaptiveTherapyModels.swift
 +//  Loop
@@ -1779,6 +1812,25 @@ index 00000000..493b8d54
 +    case belowSuspendThreshold = "sotto la soglia di sospensione"
 +    case podChange = "cambio pod recente"
 +    case insufficientData = "dati insufficienti"
++
++    /// I valori grezzi restano quelli che sono, perche' sono anche le chiavi con cui i
++    /// rapporti gia' salvati sono stati scritti. Quello che si mostra e' questo.
++    var label: String {
++        switch self {
++        case .activeCarbs: return NSLocalizedString("carbs still absorbing", comment: "Adaptive exclusion reason")
++        case .longMealSuspected: return NSLocalizedString("suspected slow meal", comment: "Adaptive exclusion reason")
++        case .manualBolus: return NSLocalizedString("recent manual bolus", comment: "Adaptive exclusion reason")
++        case .overrideActive: return NSLocalizedString("override active", comment: "Adaptive exclusion reason")
++        case .glucoseGap: return NSLocalizedString("gap in CGM data", comment: "Adaptive exclusion reason")
++        case .belowSuspendThreshold: return NSLocalizedString("below suspend threshold", comment: "Adaptive exclusion reason")
++        case .podChange: return NSLocalizedString("recent pod change", comment: "Adaptive exclusion reason")
++        case .insufficientData: return NSLocalizedString("not enough data", comment: "Adaptive exclusion reason")
++        }
++    }
++
++    static func label(forRawValue raw: String) -> String {
++        AdaptiveExclusionReason(rawValue: raw)?.label ?? raw
++    }
 +}
 +
 +/// Un intervallo elementare di analisi.
@@ -1827,12 +1879,41 @@ index 00000000..493b8d54
 +    /// Falso quando la fascia non ha prodotto una raccomandazione utilizzabile.
 +    let isActionable: Bool
 +
++    /// Perche' la fascia e' finita cosi'. Opzionale: i rapporti salvati prima che questo
++    /// campo esistesse devono continuare a decodificarsi.
++    var outcome: AdaptiveSlotOutcome? = nil
++
++    /// I moltiplicatori PRIMA del taglio ai limiti di sicurezza. Servono a distinguere
++    /// una stima che sfiora il limite da una che lo sfonda: se il grezzo e' -0,60 e il
++    /// mostrato e' -0,15, il numero mostrato non e' una raccomandazione, e' un tappo.
++    var rawBasalMultiplier: Double? = nil
++    var rawInsulinSensitivityMultiplier: Double? = nil
++
 +    let notes: [String]
 +
 +    var id: Int { slotStartMinutes }
 +
 +    var slotLabel: String {
 +        String(format: "%02d:%02d", slotStartMinutes / 60, slotStartMinutes % 60)
++    }
++}
++
++/// Perche' una fascia oraria e' o non e' utilizzabile.
++enum AdaptiveSlotOutcome: String, Codable {
++    case ok
++    case noData
++    case tooFewSamples
++    case tooDispersed
++    case tooManyOutliers
++
++    var label: String {
++        switch self {
++        case .ok: return NSLocalizedString("usable", comment: "Adaptive slot outcome")
++        case .noData: return NSLocalizedString("no readable data", comment: "Adaptive slot outcome")
++        case .tooFewSamples: return NSLocalizedString("too few days", comment: "Adaptive slot outcome")
++        case .tooDispersed: return NSLocalizedString("too inconsistent", comment: "Adaptive slot outcome")
++        case .tooManyOutliers: return NSLocalizedString("too many outliers", comment: "Adaptive slot outcome")
++        }
 +    }
 +}
 +
@@ -1896,6 +1977,9 @@ index 00000000..493b8d54
 +    /// Sopra 1 vuol dire meno insulina per grammo, sotto 1 piu' insulina per grammo.
 +    let multiplier: Double
 +
++    /// Il moltiplicatore prima del taglio ai limiti di sicurezza.
++    var rawMultiplier: Double? = nil
++
 +    /// Quanto pesa questo pasto nella statistica.
 +    let weight: Double
 +
@@ -1911,6 +1995,14 @@ index 00000000..493b8d54
 +    let effectiveMeals: Double
 +    let dispersion: Double
 +    let isActionable: Bool
++
++    /// Stima prima del taglio ai limiti di sicurezza.
++    var rawMultiplier: Double? = nil
++
++    /// Frazione di pasti la cui stima e' finita contro il limite. Vicino a 1 significa
++    /// che il numero mostrato e' il limite stesso, non una misura.
++    var clampedShare: Double? = nil
++
 +    let notes: [String]
 +
 +    /// Moltiplicatore medio raggruppato per giorno di vita del pod, quando ci sono
@@ -2205,10 +2297,10 @@ index c9aef285..4c5e4b95 100644
  private extension TemporaryScheduleOverride {
 diff --git a/Loop/Loop/Views/AdaptiveTherapyView.swift b/Loop/Loop/Views/AdaptiveTherapyView.swift
 new file mode 100644
-index 00000000..93d346db
+index 00000000..dc4644cd
 --- /dev/null
 +++ b/Loop/Loop/Views/AdaptiveTherapyView.swift
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,265 @@
 +//
 +//  AdaptiveTherapyView.swift
 +//  Loop
@@ -2240,6 +2332,7 @@ index 00000000..93d346db
 +
 +            if let report = report {
 +                summarySection(report)
++                slotBreakdownSection(report)
 +                carbRatioSection(report)
 +                slotsSection(report)
 +                exclusionsSection(report)
@@ -2324,6 +2417,16 @@ index 00000000..93d346db
 +                row(NSLocalizedString("Meals used", comment: "Label"),
 +                    String(format: "%.1f", carbRatio.effectiveMeals))
 +
++                if let raw = carbRatio.rawMultiplier {
++                    row(NSLocalizedString("Raw estimate", comment: "Label for the unclamped carb ratio estimate"),
++                        Self.percentString(raw))
++                }
++
++                if let share = carbRatio.clampedShare, share > 0.05 {
++                    row(NSLocalizedString("Meals at the safety limit", comment: "Label"),
++                        String(format: "%.0f%%", share * 100))
++                }
++
 +                ForEach(carbRatio.notes, id: \.self) { note in
 +                    Text(note)
 +                        .font(.caption)
@@ -2345,6 +2448,44 @@ index 00000000..93d346db
 +        }
 +    }
 +
++    /// Perche' le fasce non sono utilizzabili. Senza questo la schermata dice "0 su 48" e
++    /// si ferma li', che e' il modo piu' rapido per non farsi credere.
++    @ViewBuilder
++    private func slotBreakdownSection(_ report: AdaptiveTherapyReport) -> some View {
++        let withOutcome = report.slots.compactMap { $0.outcome }
++        if !withOutcome.isEmpty {
++            Section {
++                ForEach(Self.outcomeOrder, id: \.self) { outcome in
++                    let count = withOutcome.filter { $0 == outcome }.count
++                    if count > 0 {
++                        row(outcome.label, "\(count)")
++                    }
++                }
++
++                let measured = report.slots.filter { $0.effectiveSamples > 0 }
++                if !measured.isEmpty {
++                    row(NSLocalizedString("Typical days per slot", comment: "Label"),
++                        String(format: "%.1f", Self.median(measured.map { $0.effectiveSamples })))
++                    row(NSLocalizedString("Typical spread", comment: "Label"),
++                        String(format: "%.0f mg/dL/h", Self.median(measured.map { $0.dispersion })))
++                }
++            } header: {
++                Text(NSLocalizedString("How the 48 slots ended up", comment: "Section header for the slot breakdown"))
++            } footer: {
++                Text(NSLocalizedString("\"Too few days\" means the slot was readable on too few of the days in the window. \"Too inconsistent\" means it was readable often enough, but the readings disagreed with each other too much to be worth acting on. The two typical figures say how far off it is: just short, or nowhere near.", comment: "Footer explaining the slot breakdown"))
++            }
++        }
++    }
++
++    private static let outcomeOrder: [AdaptiveSlotOutcome] = [.ok, .tooFewSamples, .tooDispersed, .tooManyOutliers, .noData]
++
++    private static func median(_ values: [Double]) -> Double {
++        guard !values.isEmpty else { return 0 }
++        let sorted = values.sorted()
++        let middle = sorted.count / 2
++        return sorted.count % 2 == 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle]
++    }
++
 +    private func exclusionsSection(_ report: AdaptiveTherapyReport) -> some View {
 +        Section {
 +            if report.exclusionCounts.isEmpty {
@@ -2353,7 +2494,7 @@ index 00000000..93d346db
 +            } else {
 +                let ordered = report.exclusionCounts.sorted { $0.value > $1.value }.map { $0.key }
 +                ForEach(ordered, id: \.self) { key in
-+                    row(key, "\(report.exclusionCounts[key] ?? 0)")
++                    row(AdaptiveExclusionReason.label(forRawValue: key), "\(report.exclusionCounts[key] ?? 0)")
 +                }
 +            }
 +        } header: {
